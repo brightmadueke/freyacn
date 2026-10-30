@@ -21,9 +21,9 @@
 use freyacn::prelude::*;
 
 const SAMPLE_PATH: &str =
-    "/home/bright/RustroverProjects/freyacn-cargo-workspace/crates/freyacn/assets/sample.jpg";
+    "/home/bright/RustroverProjects/freyacn/crates/freyacn/assets/sample.jpg";
 const SAMPLE_PATH_2: &str =
-    "/home/bright/RustroverProjects/freyacn-cargo-workspace/crates/freyacn/assets/sample2.jpg";
+    "/home/bright/RustroverProjects/freyacn/crates/freyacn/assets/sample2.jpg";
 
 // ==============================================================
 // Layout helpers

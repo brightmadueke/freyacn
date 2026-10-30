@@ -7,8 +7,8 @@
 //! `Label` renders a `rect()` wrapper around a `label()`:
 //!
 //! ```text
-//! rect()        <- box styles, `.interactive(true)`, events, a11y
-//!   └─ label()  <- text styles
+//! rect()        <- box stylesheet, `.interactive(true)`, events, a11y
+//!   └─ label()  <- text stylesheet
 //! ```
 //!
 //! The wrapper is always present. `label()` isn't a reliable pointer
@@ -38,7 +38,7 @@
 //!
 //! If a label were interactive by default, moving the pointer onto
 //! its text would fire `pointer_leave` on the parent button, dropping
-//! the button's `hover:*` styles. Freya's hit tester routes each event
+//! the button's `hover:*` stylesheet. Freya's hit tester routes each event
 //! to the topmost interactive element, and the label would win. See
 //! `Div`'s module docs for the full pattern.
 //!

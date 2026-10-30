@@ -276,7 +276,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         return Err(syn::Error::new_spanned(
             &variant_props[0].name,
             "`variants(...)` requires `style` to also be listed in `ext(...)`, \
-             so the resolved variant styles have somewhere to be merged. \
+             so the resolved variant stylesheet have somewhere to be merged. \
              Add `style`, e.g. `ext(style, children)`.",
         ));
     }
@@ -406,7 +406,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 &prop.name,
                 format!(
                     "`{}` collides with a field contributed by `ext(...)`. \
-                     Extension fields are reserved by freyacn-cargo-workspace and cannot be \
+                     Extension fields are reserved by freyacn and cannot be \
                      shadowed by {}.",
                     prop.name,
                     source_label(prop.source),

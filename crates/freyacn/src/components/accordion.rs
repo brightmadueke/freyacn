@@ -33,7 +33,7 @@
 //!
 //! The trigger `Div` is the interactive element. Its `Label` and
 //! `AnimatedChevron` are non-interactive by default, so the trigger's
-//! `hover:` / `active:` styles stay applied when the pointer moves
+//! `hover:` / `active:` stylesheet stay applied when the pointer moves
 //! onto the label or the chevron. Hover state is inherited by the
 //! label via `DivActiveState`, which is what makes `hover:underline`
 //! work without any `pointer-events` fiddling in the showcase.

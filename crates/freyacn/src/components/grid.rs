@@ -115,7 +115,7 @@ pub fn Grid() {
         container = container.max_height(h);
     }
 
-    // Inheritable text styles
+    // Inheritable text stylesheet
     if let Some(c) = style.text_color {
         container = container.color(c);
     }

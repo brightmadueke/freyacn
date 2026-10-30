@@ -50,7 +50,7 @@
 //! The pattern across this crate is therefore:
 //!
 //! * The **outermost** element of a widget (`Button`, `AccordionTrigger`,
-//!   any `Div` with `hover:` / `active:` styles) is interactive. It
+//!   any `Div` with `hover:` / `active:` stylesheet) is interactive. It
 //!   owns hover and press state.
 //! * **Children are non-interactive** (`pointer-events-none` in DOM
 //!   terms). They inherit the parent's state via `DivActiveState` and

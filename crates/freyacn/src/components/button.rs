@@ -31,7 +31,7 @@
 //!
 //! The `Button`'s underlying `Div` is the interactive element. Its
 //! children — `Label`, `Icon`, badges — are non-interactive by default,
-//! so the button's `hover:` / `active:` styles stay applied when the
+//! so the button's `hover:` / `active:` stylesheet stay applied when the
 //! pointer moves onto its label or icon. Hover and press state live on
 //! the button `Div` and propagate to descendants via `DivActiveState`.
 //!

@@ -51,7 +51,7 @@ The library is built around five core ideas:
 
 ## Workspace layout
 
-The project is the **`freyacn-cargo-workspace`** Cargo workspace. Every crate
+The project is the **`freyacn`** Cargo workspace. Every crate
 lives in this repository.
 
 | Crate            | Path                     | Purpose                                                                               |
@@ -935,7 +935,7 @@ handle keyed on `src`, and falls back gracefully when the file is missing.
 - **`object-fit` mapping**:
 
   | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
-                |------------|---------------------|--------------------|
+                  |------------|---------------------|--------------------|
   | `Fill`     | `None` (stretch)    | `Fill`             |
   | `Cover`    | `Max` (cover, crop) | `Center`           |
   | `Contain`  | `Min` (fit inside)  | `Fill`             |
@@ -1268,7 +1268,7 @@ impl TooltipExt for TooltippedLabelComponent {
 ## Examples
 
 Every component has a runnable showcase under
-`crates/freyacn/examples/` in the `freyacn-cargo-workspace`:
+`crates/freyacn/examples/` in the `freyacn`:
 
 ```bash
 cargo run --example div_showcase

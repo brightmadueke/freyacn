@@ -41,10 +41,9 @@ use freyacn::prelude::*;
 // Change these to absolute paths or to files you know exist on your
 // machine (e.g. "/home/you/Pictures/photo.jpg") for a real demo.
 
-const SAMPLE_PATH: &str =
-    "/home/bright/RustroverProjects/freyacn-cargo-workspace/crates/freyacn/assets/sample.jpg";
+const SAMPLE_PATH: &str = "/home/bright/RustroverProjects/freyacn/crates/freyacn/assets/sample.jpg";
 const SAMPLE_PATH_2: &str =
-    "/home/bright/RustroverProjects/freyacn-cargo-workspace/crates/freyacn/assets/sample2.jpg";
+    "/home/bright/RustroverProjects/freyacn/crates/freyacn/assets/sample2.jpg";
 
 // ==============================================================
 // Layout helpers
@@ -153,7 +152,7 @@ fn fit_section() -> impl IntoElement {
     )
 }
 
-/// The new tailwind-style `object-*` tokens. These live in `style.rs`
+/// The new tailwind-style `object-*` tokens. These live in `stylesheet`
 /// and take precedence over the `fit` prop because the style string is
 /// the more specific declaration.
 fn fit_token_section() -> impl IntoElement {
@@ -393,7 +392,7 @@ fn blur_prop_section() -> impl IntoElement {
 
 /// `blur-*` tokens in a style string feed `ImageData::blur` and win
 /// over the `blur` prop. Radius values are the ones configured in
-/// `style.rs`: `sm`=4, `md`=12, `lg`=16, `xl`=24.
+/// `stylesheet`: `sm`=4, `md`=12, `lg`=16, `xl`=24.
 fn blur_token_section() -> impl IntoElement {
     section(
         "Blur — tailwind token",

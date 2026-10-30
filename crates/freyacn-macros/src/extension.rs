@@ -126,7 +126,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // style  →  freyacn-cargo-workspace::StyleExt
+        // style  →  freyacn::StyleExt
         // -------------------------------------------------------------------
         //
         // The `style` field is a plain `Style` — the user's override layer.
@@ -238,7 +238,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // accessibility  →  freyacn-cargo-workspace::AccessibilityExt
+        // accessibility  →  freyacn::AccessibilityExt
         // -------------------------------------------------------------------
         "accessibility" => Extension {
             fields: vec![quote! {
@@ -296,7 +296,7 @@ pub struct ExtensionsCode {
 ///
 /// `base_style` is an optional leading string literal parsed from
 /// `variants("…")` inside `#[component]`. It is folded into the
-/// generated `style` local, below variant styles and user overrides —
+/// generated `style` local, below variant stylesheet and user overrides —
 /// matching shadcn's `cn(base, variant, size, user)` layering.
 ///
 /// Standalone `#[extensions(...)]` has no variant context, so it passes

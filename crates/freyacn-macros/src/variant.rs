@@ -1,7 +1,7 @@
 //! The `#[variant]` attribute macro for enums.
 //!
 //! Generates `From<&str>`, `From<String>`, `.style_str()`, `.resolve()`,
-//! and an `impl freyacn-cargo-workspace::Variant` from per-variant `#[variant("…")]`
+//! and an `impl freyacn::Variant` from per-variant `#[variant("…")]`
 //! attributes.
 
 use proc_macro2::{Span, TokenStream as TokenStream2};

@@ -1,7 +1,7 @@
 //! The [`Variant`] trait.
 //!
 //! Implemented automatically by the `#[variant]` proc-macro on enums. Used
-//! by the component macro to merge variant-derived styles into a component's
+//! by the component macro to merge variant-derived stylesheet into a component's
 //! effective style before rendering.
 //!
 //! # Overview
@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use freyacn-cargo-workspace::{variant, Variant};
+//! use freyacn::{variant, Variant};
 //!
 //! #[variant]
 //! #[derive(Clone, Copy, PartialEq, Eq, Default)]

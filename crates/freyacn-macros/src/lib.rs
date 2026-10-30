@@ -1,17 +1,17 @@
-//! Procedural macros for the [`freyacn-cargo-workspace`] crate.
+//! Procedural macros for the [`freyacn`] crate.
 //!
 //! This crate provides the attribute macros that turn plain Rust functions
-//! and enums into the styled, prop-driven building blocks freyacn-cargo-workspace uses.
+//! and enums into the styled, prop-driven building blocks freyacn uses.
 //!
 //! * [`macro@component`] — turns a function into a component struct.
 //! * [`macro@variant`]   — turns an enum into a style-resolving variant type.
-//! * [`macro@extensions`] — opts a hand-written struct into a freyacn-cargo-workspace
+//! * [`macro@extensions`] — opts a hand-written struct into a freyacn
 //!   extension bundle (used standalone; the `ext(...)` group inside
 //!   `#[component]` is the normal path).
 //! * [`macro@struct_fields`] — stub attribute that fires when
 //!   `#[struct_fields(...)]` is placed in the wrong position.
 //!
-//! [`freyacn-cargo-workspace`]: https://crates.io/crates/freyacn
+//! [`freyacn`]: https://crates.io/crates/freyacn
 
 mod component;
 mod extension;
