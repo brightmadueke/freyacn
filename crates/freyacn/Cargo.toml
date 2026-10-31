@@ -27,3 +27,5 @@ skia-safe = { package = "freya-skia-safe", version = "0.104.0" }
 strum = { version = "0.28.0", features = ["derive"] }
 regex = "1.13.1"
 euclid = "0.22.14"
+serde = "1.0.229"
+serde_json = "1.0.154"

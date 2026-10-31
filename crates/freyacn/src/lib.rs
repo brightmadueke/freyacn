@@ -4,9 +4,6 @@
 extern crate self as freyacn;
 
 pub mod cn;
-pub mod components;
-pub mod extensions;
-pub mod stylesheet;
 pub mod styling;
 pub mod theme;
 pub mod utils;
@@ -16,14 +13,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::cn;
     #[doc(inline)]
-    pub use crate::components::*;
-    #[doc(inline)]
-    pub use crate::extensions::style::{StyleExt, *};
-    #[doc(inline)]
-    pub use crate::theme::{
-        Colors, Theme, get_cn_theme_or_default, use_cn_theme, use_init_cn_theme,
-        use_provide_cn_theme,
-    };
+    pub use crate::theme::{Theme, get_cn_theme_or_default, use_cn_theme};
     #[doc(inline)]
     pub use crate::utils::*;
     #[doc(inline)]

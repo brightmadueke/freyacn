@@ -1852,6 +1852,8 @@ dependencies = [
  "paste",
  "regex",
  "rustc-hash",
+ "serde",
+ "serde_json",
  "strum",
  "torin",
 ]

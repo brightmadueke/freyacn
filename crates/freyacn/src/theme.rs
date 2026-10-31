@@ -1,1312 +1,940 @@
-//! # FreyaCN Theme System
+//! JSON-driven theming for FreyaCN, modeled on gpui-kit semantics.
 //!
-//! Aligned with **shadcn/ui v4** (`globals.css`, neutral base).
+//! Uses [`StyledColor`] and the palette functions exported by
+//! [`crate::styling::colors`]. Supports:
 //!
-//! ## Token values
-//!
-//! Every semantic token in the `neutral` base resolves to the exact
-//! shadcn OKLCH value converted to sRGB. Other bases (`slate`, `stone`,
-//! `zinc`, …) derive their surfaces from the Tailwind palette using the
-//! same *structure* — `background < card < popover = muted = secondary
-//! < accent` in dark, inverted in light.
-//!
-//! | Token | Light | Dark |
-//! |---|---|---|
-//! | `background` | `#ffffff` | `rgb(10,10,10)` |
-//! | `foreground` | `rgb(10,10,10)` | `rgb(250,250,250)` |
-//! | `card` | `#ffffff` | `rgb(23,23,23)` |
-//! | `popover` | `#ffffff` | `rgb(38,38,38)` |
-//! | `primary` | `rgb(23,23,23)` | `rgb(229,229,229)` |
-//! | `secondary` | `rgb(245,245,245)` | `rgb(38,38,38)` |
-//! | `muted` | `rgb(245,245,245)` | `rgb(38,38,38)` |
-//! | `muted-foreground` | `rgb(115,115,115)` | `rgb(161,161,161)` |
-//! | `accent` | `rgb(245,245,245)` | `rgb(64,64,64)` |
-//! | `destructive` | `rgb(231,0,11)` | `rgb(255,100,103)` |
-//! | `border` | `rgb(229,229,229)` | `white / 10%` |
-//! | `input` | `rgb(229,229,229)` | `white / 15%` |
-//! | `ring` | `rgb(161,161,161)` | `rgb(115,115,115)` |
-//!
-//! ## Radius
-//!
-//! shadcn uses a single `--radius: 0.625rem` (10px) with derived steps:
-//! `sm = 6px`, `md = 8px`, `lg = 10px`, `xl = 14px`. `Theme::radius_lg`
-//! is what `rounded-lg` maps to in shadcn — components that want an
-//! exact shadcn corner should read it rather than hard-coding `8.0`.
+//! - Solid colors, palette references (`{blue.500}`, `{neutral.950}/24`).
+//! - Linear / radial / conic gradients.
+//! - Free-form component tokens (`button.primary.background`, …).
+//! - Component-state tokens (`hover`, `active`, `focus`, `disabled`, …)
+//!   with fallback to the base token.
+
+#![allow(clippy::too_many_arguments)]
+
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use freya::prelude::*;
 use freya::prelude::{
     Readable, State, provide_context, try_consume_context, use_consume, use_hook,
 };
 use paste::paste;
+use serde::{Deserialize, Serialize};
 
-/// Convert an RGB tuple into a Freya Color.
-const fn rgb(r: u8, g: u8, b: u8) -> Color {
-    Color::from_rgb(r, g, b)
+use crate::styling::colors::StyledColor;
+use std::cell::RefCell;
+
+thread_local! {
+    /// The theme currently active on this thread. Read by
+    /// [`Style::default`] to seed colors. Written by
+    /// [`set_active_theme`] from `ThemeHandle`.
+    static ACTIVE_THEME: RefCell<Option<Arc<Theme>>> = RefCell::new(None);
 }
 
-// ------------------------------------------------------------------------
-// Shadcn-exact tokens
-// ------------------------------------------------------------------------
-
-/// Exact shadcn/ui v4 token colours, converted from the OKLCH values in
-/// `globals.css` to sRGB. Only the `neutral` base uses these; other
-/// bases derive from the Tailwind palette.
-mod shadcn {
-    use super::{Color, rgb};
-
-    // ---- Light (`.root`) ----
-    pub const LIGHT_BACKGROUND: Color = rgb(255, 255, 255);
-    pub const LIGHT_FOREGROUND: Color = rgb(10, 10, 10);
-    pub const LIGHT_CARD: Color = rgb(255, 255, 255);
-    pub const LIGHT_CARD_FOREGROUND: Color = rgb(10, 10, 10);
-    pub const LIGHT_POPOVER: Color = rgb(255, 255, 255);
-    pub const LIGHT_POPOVER_FOREGROUND: Color = rgb(10, 10, 10);
-    pub const LIGHT_PRIMARY: Color = rgb(23, 23, 23);
-    pub const LIGHT_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const LIGHT_SECONDARY: Color = rgb(245, 245, 245);
-    pub const LIGHT_SECONDARY_FOREGROUND: Color = rgb(23, 23, 23);
-    pub const LIGHT_MUTED: Color = rgb(245, 245, 245);
-    pub const LIGHT_MUTED_FOREGROUND: Color = rgb(115, 115, 115);
-    pub const LIGHT_ACCENT: Color = rgb(245, 245, 245);
-    pub const LIGHT_ACCENT_FOREGROUND: Color = rgb(23, 23, 23);
-    pub const LIGHT_DESTRUCTIVE: Color = rgb(231, 0, 11);
-    pub const LIGHT_BORDER: Color = rgb(229, 229, 229);
-    pub const LIGHT_INPUT: Color = rgb(229, 229, 229);
-    pub const LIGHT_RING: Color = rgb(161, 161, 161);
-    pub const LIGHT_SIDEBAR: Color = rgb(250, 250, 250);
-    pub const LIGHT_SIDEBAR_FOREGROUND: Color = rgb(10, 10, 10);
-    pub const LIGHT_SIDEBAR_PRIMARY: Color = rgb(23, 23, 23);
-    pub const LIGHT_SIDEBAR_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const LIGHT_SIDEBAR_ACCENT: Color = rgb(245, 245, 245);
-    pub const LIGHT_SIDEBAR_ACCENT_FOREGROUND: Color = rgb(23, 23, 23);
-    pub const LIGHT_SIDEBAR_BORDER: Color = rgb(229, 229, 229);
-    pub const LIGHT_SIDEBAR_RING: Color = rgb(161, 161, 161);
-
-    pub const LIGHT_CHART_1: Color = rgb(245, 74, 0);
-    pub const LIGHT_CHART_2: Color = rgb(0, 150, 137);
-    pub const LIGHT_CHART_3: Color = rgb(16, 78, 100);
-    pub const LIGHT_CHART_4: Color = rgb(255, 185, 0);
-    pub const LIGHT_CHART_5: Color = rgb(254, 153, 0);
-
-    // ---- Dark (`.dark`) ----
-    pub const DARK_BACKGROUND: Color = rgb(10, 10, 10);
-    pub const DARK_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_CARD: Color = rgb(23, 23, 23);
-    pub const DARK_CARD_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_POPOVER: Color = rgb(38, 38, 38);
-    pub const DARK_POPOVER_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_PRIMARY: Color = rgb(229, 229, 229);
-    pub const DARK_PRIMARY_FOREGROUND: Color = rgb(23, 23, 23);
-    pub const DARK_SECONDARY: Color = rgb(38, 38, 38);
-    pub const DARK_SECONDARY_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_MUTED: Color = rgb(38, 38, 38);
-    pub const DARK_MUTED_FOREGROUND: Color = rgb(161, 161, 161);
-    pub const DARK_ACCENT: Color = rgb(64, 64, 64);
-    pub const DARK_ACCENT_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_DESTRUCTIVE: Color = rgb(255, 100, 103);
-
-    /// `oklch(1 0 0 / 10%)` — white at 10% alpha.
-    pub const DARK_BORDER: Color = Color::from_argb(26, 255, 255, 255);
-    /// `oklch(1 0 0 / 15%)` — white at 15% alpha.
-    pub const DARK_INPUT: Color = Color::from_argb(38, 255, 255, 255);
-
-    pub const DARK_RING: Color = rgb(115, 115, 115);
-
-    pub const DARK_SIDEBAR: Color = rgb(23, 23, 23);
-    pub const DARK_SIDEBAR_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_SIDEBAR_PRIMARY: Color = rgb(20, 71, 230);
-    pub const DARK_SIDEBAR_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_SIDEBAR_ACCENT: Color = rgb(38, 38, 38);
-    pub const DARK_SIDEBAR_ACCENT_FOREGROUND: Color = rgb(250, 250, 250);
-    pub const DARK_SIDEBAR_BORDER: Color = Color::from_argb(26, 255, 255, 255);
-    pub const DARK_SIDEBAR_RING: Color = rgb(82, 82, 82);
-
-    pub const DARK_CHART_1: Color = rgb(20, 71, 230);
-    pub const DARK_CHART_2: Color = rgb(0, 188, 125);
-    pub const DARK_CHART_3: Color = rgb(254, 153, 0);
-    pub const DARK_CHART_4: Color = rgb(173, 70, 255);
-    pub const DARK_CHART_5: Color = rgb(255, 31, 86);
-}
-
-// ------------------------------------------------------------------------
-// Color palette
-// ------------------------------------------------------------------------
-
-/// Complete FreyaCN color palette (Tailwind/shadcn style).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Colors {
-    pub white: Color,
-    pub black: Color,
-
-    pub stone_50: Color,
-    pub stone_100: Color,
-    pub stone_200: Color,
-    pub stone_300: Color,
-    pub stone_400: Color,
-    pub stone_500: Color,
-    pub stone_600: Color,
-    pub stone_700: Color,
-    pub stone_800: Color,
-    pub stone_900: Color,
-    pub stone_950: Color,
-
-    pub mauve_50: Color,
-    pub mauve_100: Color,
-    pub mauve_200: Color,
-    pub mauve_300: Color,
-    pub mauve_400: Color,
-    pub mauve_500: Color,
-    pub mauve_600: Color,
-    pub mauve_700: Color,
-    pub mauve_800: Color,
-    pub mauve_900: Color,
-    pub mauve_950: Color,
-
-    pub olive_50: Color,
-    pub olive_100: Color,
-    pub olive_200: Color,
-    pub olive_300: Color,
-    pub olive_400: Color,
-    pub olive_500: Color,
-    pub olive_600: Color,
-    pub olive_700: Color,
-    pub olive_800: Color,
-    pub olive_900: Color,
-    pub olive_950: Color,
-
-    pub mist_50: Color,
-    pub mist_100: Color,
-    pub mist_200: Color,
-    pub mist_300: Color,
-    pub mist_400: Color,
-    pub mist_500: Color,
-    pub mist_600: Color,
-    pub mist_700: Color,
-    pub mist_800: Color,
-    pub mist_900: Color,
-    pub mist_950: Color,
-
-    pub taupe_50: Color,
-    pub taupe_100: Color,
-    pub taupe_200: Color,
-    pub taupe_300: Color,
-    pub taupe_400: Color,
-    pub taupe_500: Color,
-    pub taupe_600: Color,
-    pub taupe_700: Color,
-    pub taupe_800: Color,
-    pub taupe_900: Color,
-    pub taupe_950: Color,
-
-    pub slate_50: Color,
-    pub slate_100: Color,
-    pub slate_200: Color,
-    pub slate_300: Color,
-    pub slate_400: Color,
-    pub slate_500: Color,
-    pub slate_600: Color,
-    pub slate_700: Color,
-    pub slate_800: Color,
-    pub slate_900: Color,
-    pub slate_950: Color,
-
-    pub gray_50: Color,
-    pub gray_100: Color,
-    pub gray_200: Color,
-    pub gray_300: Color,
-    pub gray_400: Color,
-    pub gray_500: Color,
-    pub gray_600: Color,
-    pub gray_700: Color,
-    pub gray_800: Color,
-    pub gray_900: Color,
-    pub gray_950: Color,
-
-    pub zinc_50: Color,
-    pub zinc_100: Color,
-    pub zinc_200: Color,
-    pub zinc_300: Color,
-    pub zinc_400: Color,
-    pub zinc_500: Color,
-    pub zinc_600: Color,
-    pub zinc_700: Color,
-    pub zinc_800: Color,
-    pub zinc_900: Color,
-    pub zinc_950: Color,
-
-    pub neutral_50: Color,
-    pub neutral_100: Color,
-    pub neutral_200: Color,
-    pub neutral_300: Color,
-    pub neutral_400: Color,
-    pub neutral_500: Color,
-    pub neutral_600: Color,
-    pub neutral_700: Color,
-    pub neutral_800: Color,
-    pub neutral_900: Color,
-    pub neutral_950: Color,
-
-    pub red_50: Color,
-    pub red_100: Color,
-    pub red_200: Color,
-    pub red_300: Color,
-    pub red_400: Color,
-    pub red_500: Color,
-    pub red_600: Color,
-    pub red_700: Color,
-    pub red_800: Color,
-    pub red_900: Color,
-    pub red_950: Color,
-
-    pub orange_50: Color,
-    pub orange_100: Color,
-    pub orange_200: Color,
-    pub orange_300: Color,
-    pub orange_400: Color,
-    pub orange_500: Color,
-    pub orange_600: Color,
-    pub orange_700: Color,
-    pub orange_800: Color,
-    pub orange_900: Color,
-    pub orange_950: Color,
-
-    pub amber_50: Color,
-    pub amber_100: Color,
-    pub amber_200: Color,
-    pub amber_300: Color,
-    pub amber_400: Color,
-    pub amber_500: Color,
-    pub amber_600: Color,
-    pub amber_700: Color,
-    pub amber_800: Color,
-    pub amber_900: Color,
-    pub amber_950: Color,
-
-    pub yellow_50: Color,
-    pub yellow_100: Color,
-    pub yellow_200: Color,
-    pub yellow_300: Color,
-    pub yellow_400: Color,
-    pub yellow_500: Color,
-    pub yellow_600: Color,
-    pub yellow_700: Color,
-    pub yellow_800: Color,
-    pub yellow_900: Color,
-    pub yellow_950: Color,
-
-    pub lime_50: Color,
-    pub lime_100: Color,
-    pub lime_200: Color,
-    pub lime_300: Color,
-    pub lime_400: Color,
-    pub lime_500: Color,
-    pub lime_600: Color,
-    pub lime_700: Color,
-    pub lime_800: Color,
-    pub lime_900: Color,
-    pub lime_950: Color,
-
-    pub green_50: Color,
-    pub green_100: Color,
-    pub green_200: Color,
-    pub green_300: Color,
-    pub green_400: Color,
-    pub green_500: Color,
-    pub green_600: Color,
-    pub green_700: Color,
-    pub green_800: Color,
-    pub green_900: Color,
-    pub green_950: Color,
-
-    pub emerald_50: Color,
-    pub emerald_100: Color,
-    pub emerald_200: Color,
-    pub emerald_300: Color,
-    pub emerald_400: Color,
-    pub emerald_500: Color,
-    pub emerald_600: Color,
-    pub emerald_700: Color,
-    pub emerald_800: Color,
-    pub emerald_900: Color,
-    pub emerald_950: Color,
-
-    pub teal_50: Color,
-    pub teal_100: Color,
-    pub teal_200: Color,
-    pub teal_300: Color,
-    pub teal_400: Color,
-    pub teal_500: Color,
-    pub teal_600: Color,
-    pub teal_700: Color,
-    pub teal_800: Color,
-    pub teal_900: Color,
-    pub teal_950: Color,
-
-    pub cyan_50: Color,
-    pub cyan_100: Color,
-    pub cyan_200: Color,
-    pub cyan_300: Color,
-    pub cyan_400: Color,
-    pub cyan_500: Color,
-    pub cyan_600: Color,
-    pub cyan_700: Color,
-    pub cyan_800: Color,
-    pub cyan_900: Color,
-    pub cyan_950: Color,
-
-    pub sky_50: Color,
-    pub sky_100: Color,
-    pub sky_200: Color,
-    pub sky_300: Color,
-    pub sky_400: Color,
-    pub sky_500: Color,
-    pub sky_600: Color,
-    pub sky_700: Color,
-    pub sky_800: Color,
-    pub sky_900: Color,
-    pub sky_950: Color,
-
-    pub blue_50: Color,
-    pub blue_100: Color,
-    pub blue_200: Color,
-    pub blue_300: Color,
-    pub blue_400: Color,
-    pub blue_500: Color,
-    pub blue_600: Color,
-    pub blue_700: Color,
-    pub blue_800: Color,
-    pub blue_900: Color,
-    pub blue_950: Color,
-
-    pub indigo_50: Color,
-    pub indigo_100: Color,
-    pub indigo_200: Color,
-    pub indigo_300: Color,
-    pub indigo_400: Color,
-    pub indigo_500: Color,
-    pub indigo_600: Color,
-    pub indigo_700: Color,
-    pub indigo_800: Color,
-    pub indigo_900: Color,
-    pub indigo_950: Color,
-
-    pub violet_50: Color,
-    pub violet_100: Color,
-    pub violet_200: Color,
-    pub violet_300: Color,
-    pub violet_400: Color,
-    pub violet_500: Color,
-    pub violet_600: Color,
-    pub violet_700: Color,
-    pub violet_800: Color,
-    pub violet_900: Color,
-    pub violet_950: Color,
-
-    pub purple_50: Color,
-    pub purple_100: Color,
-    pub purple_200: Color,
-    pub purple_300: Color,
-    pub purple_400: Color,
-    pub purple_500: Color,
-    pub purple_600: Color,
-    pub purple_700: Color,
-    pub purple_800: Color,
-    pub purple_900: Color,
-    pub purple_950: Color,
-
-    pub fuchsia_50: Color,
-    pub fuchsia_100: Color,
-    pub fuchsia_200: Color,
-    pub fuchsia_300: Color,
-    pub fuchsia_400: Color,
-    pub fuchsia_500: Color,
-    pub fuchsia_600: Color,
-    pub fuchsia_700: Color,
-    pub fuchsia_800: Color,
-    pub fuchsia_900: Color,
-    pub fuchsia_950: Color,
-
-    pub pink_50: Color,
-    pub pink_100: Color,
-    pub pink_200: Color,
-    pub pink_300: Color,
-    pub pink_400: Color,
-    pub pink_500: Color,
-    pub pink_600: Color,
-    pub pink_700: Color,
-    pub pink_800: Color,
-    pub pink_900: Color,
-    pub pink_950: Color,
-
-    pub rose_50: Color,
-    pub rose_100: Color,
-    pub rose_200: Color,
-    pub rose_300: Color,
-    pub rose_400: Color,
-    pub rose_500: Color,
-    pub rose_600: Color,
-    pub rose_700: Color,
-    pub rose_800: Color,
-    pub rose_900: Color,
-    pub rose_950: Color,
-}
-
-impl Colors {
-    /// Creates a new colour palette with all the default Tailwind-style colours.
-    pub fn new() -> Self {
-        Self {
-            white: rgb(255, 255, 255),
-            black: rgb(0, 0, 0),
-
-            stone_50: rgb(250, 250, 249),
-            stone_100: rgb(245, 245, 244),
-            stone_200: rgb(231, 229, 228),
-            stone_300: rgb(214, 211, 209),
-            stone_400: rgb(166, 160, 155),
-            stone_500: rgb(121, 113, 107),
-            stone_600: rgb(87, 83, 77),
-            stone_700: rgb(68, 64, 59),
-            stone_800: rgb(41, 37, 36),
-            stone_900: rgb(28, 25, 23),
-            stone_950: rgb(12, 10, 9),
-
-            mauve_50: rgb(250, 250, 250),
-            mauve_100: rgb(243, 241, 243),
-            mauve_200: rgb(231, 228, 231),
-            mauve_300: rgb(215, 208, 215),
-            mauve_400: rgb(168, 158, 169),
-            mauve_500: rgb(121, 105, 123),
-            mauve_600: rgb(89, 76, 91),
-            mauve_700: rgb(70, 57, 71),
-            mauve_800: rgb(42, 33, 44),
-            mauve_900: rgb(29, 22, 30),
-            mauve_950: rgb(12, 9, 12),
-
-            olive_50: rgb(251, 251, 249),
-            olive_100: rgb(244, 244, 240),
-            olive_200: rgb(232, 232, 227),
-            olive_300: rgb(216, 216, 208),
-            olive_400: rgb(171, 171, 156),
-            olive_500: rgb(124, 124, 103),
-            olive_600: rgb(91, 91, 75),
-            olive_700: rgb(71, 71, 57),
-            olive_800: rgb(43, 43, 34),
-            olive_900: rgb(29, 29, 22),
-            olive_950: rgb(12, 12, 9),
-
-            mist_50: rgb(249, 251, 251),
-            mist_100: rgb(241, 243, 243),
-            mist_200: rgb(227, 231, 232),
-            mist_300: rgb(208, 214, 216),
-            mist_400: rgb(156, 168, 171),
-            mist_500: rgb(103, 120, 124),
-            mist_600: rgb(75, 88, 91),
-            mist_700: rgb(57, 68, 71),
-            mist_800: rgb(34, 41, 43),
-            mist_900: rgb(22, 27, 29),
-            mist_950: rgb(9, 11, 12),
-
-            taupe_50: rgb(251, 250, 249),
-            taupe_100: rgb(243, 241, 241),
-            taupe_200: rgb(232, 228, 227),
-            taupe_300: rgb(216, 210, 208),
-            taupe_400: rgb(171, 160, 156),
-            taupe_500: rgb(124, 109, 103),
-            taupe_600: rgb(91, 79, 75),
-            taupe_700: rgb(71, 60, 57),
-            taupe_800: rgb(43, 36, 34),
-            taupe_900: rgb(29, 24, 22),
-            taupe_950: rgb(12, 10, 9),
-
-            slate_50: rgb(248, 250, 252),
-            slate_100: rgb(241, 245, 249),
-            slate_200: rgb(226, 232, 240),
-            slate_300: rgb(203, 213, 225),
-            slate_400: rgb(148, 163, 184),
-            slate_500: rgb(100, 116, 139),
-            slate_600: rgb(71, 85, 105),
-            slate_700: rgb(51, 65, 85),
-            slate_800: rgb(30, 41, 59),
-            slate_900: rgb(15, 23, 42),
-            slate_950: rgb(2, 6, 23),
-
-            gray_50: rgb(249, 250, 251),
-            gray_100: rgb(243, 244, 246),
-            gray_200: rgb(229, 231, 235),
-            gray_300: rgb(209, 213, 219),
-            gray_400: rgb(156, 163, 175),
-            gray_500: rgb(107, 114, 128),
-            gray_600: rgb(75, 85, 99),
-            gray_700: rgb(55, 65, 81),
-            gray_800: rgb(31, 41, 55),
-            gray_900: rgb(17, 24, 39),
-            gray_950: rgb(3, 7, 18),
-
-            zinc_50: rgb(250, 250, 250),
-            zinc_100: rgb(244, 244, 245),
-            zinc_200: rgb(228, 228, 231),
-            zinc_300: rgb(212, 212, 216),
-            zinc_400: rgb(161, 161, 170),
-            zinc_500: rgb(113, 113, 122),
-            zinc_600: rgb(82, 82, 91),
-            zinc_700: rgb(63, 63, 70),
-            zinc_800: rgb(39, 39, 42),
-            zinc_900: rgb(24, 24, 27),
-            zinc_950: rgb(9, 9, 11),
-
-            neutral_50: rgb(250, 250, 250),
-            neutral_100: rgb(245, 245, 245),
-            neutral_200: rgb(229, 229, 229),
-            neutral_300: rgb(212, 212, 212),
-            neutral_400: rgb(163, 163, 163),
-            neutral_500: rgb(115, 115, 115),
-            neutral_600: rgb(82, 82, 82),
-            neutral_700: rgb(64, 64, 64),
-            neutral_800: rgb(38, 38, 38),
-            neutral_900: rgb(23, 23, 23),
-            neutral_950: rgb(10, 10, 10),
-
-            red_50: rgb(254, 242, 242),
-            red_100: rgb(254, 226, 226),
-            red_200: rgb(254, 202, 202),
-            red_300: rgb(252, 165, 165),
-            red_400: rgb(248, 113, 113),
-            red_500: rgb(239, 68, 68),
-            red_600: rgb(220, 38, 38),
-            red_700: rgb(185, 28, 28),
-            red_800: rgb(153, 27, 27),
-            red_900: rgb(127, 29, 29),
-            red_950: rgb(69, 10, 10),
-
-            orange_50: rgb(255, 247, 237),
-            orange_100: rgb(255, 237, 213),
-            orange_200: rgb(254, 215, 170),
-            orange_300: rgb(253, 186, 116),
-            orange_400: rgb(251, 146, 60),
-            orange_500: rgb(249, 115, 22),
-            orange_600: rgb(234, 88, 12),
-            orange_700: rgb(194, 65, 12),
-            orange_800: rgb(154, 52, 18),
-            orange_900: rgb(124, 45, 18),
-            orange_950: rgb(67, 20, 7),
-
-            amber_50: rgb(255, 251, 235),
-            amber_100: rgb(254, 243, 199),
-            amber_200: rgb(253, 230, 138),
-            amber_300: rgb(252, 211, 77),
-            amber_400: rgb(251, 191, 36),
-            amber_500: rgb(245, 158, 11),
-            amber_600: rgb(217, 119, 6),
-            amber_700: rgb(180, 83, 9),
-            amber_800: rgb(146, 64, 14),
-            amber_900: rgb(120, 53, 15),
-            amber_950: rgb(69, 26, 3),
-
-            yellow_50: rgb(254, 252, 232),
-            yellow_100: rgb(254, 249, 195),
-            yellow_200: rgb(254, 240, 138),
-            yellow_300: rgb(253, 224, 71),
-            yellow_400: rgb(250, 204, 21),
-            yellow_500: rgb(234, 179, 8),
-            yellow_600: rgb(202, 138, 4),
-            yellow_700: rgb(161, 98, 7),
-            yellow_800: rgb(133, 77, 14),
-            yellow_900: rgb(113, 63, 18),
-            yellow_950: rgb(66, 32, 6),
-
-            lime_50: rgb(247, 254, 231),
-            lime_100: rgb(236, 252, 203),
-            lime_200: rgb(217, 249, 157),
-            lime_300: rgb(190, 242, 100),
-            lime_400: rgb(163, 230, 53),
-            lime_500: rgb(132, 204, 22),
-            lime_600: rgb(101, 163, 13),
-            lime_700: rgb(77, 124, 15),
-            lime_800: rgb(63, 98, 18),
-            lime_900: rgb(54, 83, 20),
-            lime_950: rgb(26, 46, 5),
-
-            green_50: rgb(240, 253, 244),
-            green_100: rgb(220, 252, 231),
-            green_200: rgb(187, 247, 208),
-            green_300: rgb(134, 239, 172),
-            green_400: rgb(74, 222, 128),
-            green_500: rgb(34, 197, 94),
-            green_600: rgb(22, 163, 74),
-            green_700: rgb(21, 128, 61),
-            green_800: rgb(22, 101, 52),
-            green_900: rgb(20, 83, 45),
-            green_950: rgb(5, 46, 22),
-
-            emerald_50: rgb(236, 253, 245),
-            emerald_100: rgb(209, 250, 229),
-            emerald_200: rgb(167, 243, 208),
-            emerald_300: rgb(110, 231, 183),
-            emerald_400: rgb(52, 211, 153),
-            emerald_500: rgb(16, 185, 129),
-            emerald_600: rgb(5, 150, 105),
-            emerald_700: rgb(4, 120, 87),
-            emerald_800: rgb(6, 95, 70),
-            emerald_900: rgb(6, 78, 59),
-            emerald_950: rgb(2, 44, 34),
-
-            teal_50: rgb(240, 253, 250),
-            teal_100: rgb(204, 251, 241),
-            teal_200: rgb(153, 246, 228),
-            teal_300: rgb(94, 234, 212),
-            teal_400: rgb(45, 212, 191),
-            teal_500: rgb(20, 184, 166),
-            teal_600: rgb(13, 148, 136),
-            teal_700: rgb(15, 118, 110),
-            teal_800: rgb(17, 94, 89),
-            teal_900: rgb(19, 78, 74),
-            teal_950: rgb(4, 47, 46),
-
-            cyan_50: rgb(236, 254, 255),
-            cyan_100: rgb(207, 250, 254),
-            cyan_200: rgb(165, 243, 252),
-            cyan_300: rgb(103, 232, 249),
-            cyan_400: rgb(34, 211, 238),
-            cyan_500: rgb(6, 182, 212),
-            cyan_600: rgb(8, 145, 178),
-            cyan_700: rgb(14, 116, 144),
-            cyan_800: rgb(21, 94, 117),
-            cyan_900: rgb(22, 78, 99),
-            cyan_950: rgb(8, 51, 68),
-
-            sky_50: rgb(240, 249, 255),
-            sky_100: rgb(224, 242, 254),
-            sky_200: rgb(186, 230, 253),
-            sky_300: rgb(125, 211, 252),
-            sky_400: rgb(56, 189, 248),
-            sky_500: rgb(14, 165, 233),
-            sky_600: rgb(2, 132, 199),
-            sky_700: rgb(3, 105, 161),
-            sky_800: rgb(7, 89, 133),
-            sky_900: rgb(12, 74, 110),
-            sky_950: rgb(8, 47, 73),
-
-            blue_50: rgb(239, 246, 255),
-            blue_100: rgb(219, 234, 254),
-            blue_200: rgb(191, 219, 254),
-            blue_300: rgb(147, 197, 253),
-            blue_400: rgb(96, 165, 250),
-            blue_500: rgb(59, 130, 246),
-            blue_600: rgb(37, 99, 235),
-            blue_700: rgb(29, 78, 216),
-            blue_800: rgb(30, 64, 175),
-            blue_900: rgb(30, 58, 138),
-            blue_950: rgb(23, 37, 84),
-
-            indigo_50: rgb(238, 242, 255),
-            indigo_100: rgb(224, 231, 255),
-            indigo_200: rgb(199, 210, 254),
-            indigo_300: rgb(165, 180, 252),
-            indigo_400: rgb(129, 140, 248),
-            indigo_500: rgb(99, 102, 241),
-            indigo_600: rgb(79, 70, 229),
-            indigo_700: rgb(67, 56, 202),
-            indigo_800: rgb(55, 48, 163),
-            indigo_900: rgb(49, 46, 129),
-            indigo_950: rgb(30, 27, 75),
-
-            violet_50: rgb(245, 243, 255),
-            violet_100: rgb(237, 233, 254),
-            violet_200: rgb(221, 214, 254),
-            violet_300: rgb(196, 181, 253),
-            violet_400: rgb(167, 139, 250),
-            violet_500: rgb(139, 92, 246),
-            violet_600: rgb(124, 58, 237),
-            violet_700: rgb(109, 40, 217),
-            violet_800: rgb(91, 33, 182),
-            violet_900: rgb(76, 29, 149),
-            violet_950: rgb(46, 16, 101),
-
-            purple_50: rgb(250, 245, 255),
-            purple_100: rgb(243, 232, 255),
-            purple_200: rgb(233, 213, 255),
-            purple_300: rgb(216, 180, 254),
-            purple_400: rgb(192, 132, 252),
-            purple_500: rgb(168, 85, 247),
-            purple_600: rgb(147, 51, 234),
-            purple_700: rgb(126, 34, 206),
-            purple_800: rgb(107, 33, 168),
-            purple_900: rgb(88, 28, 135),
-            purple_950: rgb(59, 7, 100),
-
-            fuchsia_50: rgb(253, 244, 255),
-            fuchsia_100: rgb(250, 232, 255),
-            fuchsia_200: rgb(245, 208, 254),
-            fuchsia_300: rgb(240, 171, 252),
-            fuchsia_400: rgb(232, 121, 249),
-            fuchsia_500: rgb(217, 70, 239),
-            fuchsia_600: rgb(192, 38, 211),
-            fuchsia_700: rgb(162, 28, 175),
-            fuchsia_800: rgb(134, 25, 143),
-            fuchsia_900: rgb(112, 26, 117),
-            fuchsia_950: rgb(74, 4, 78),
-
-            pink_50: rgb(253, 242, 248),
-            pink_100: rgb(252, 231, 243),
-            pink_200: rgb(251, 207, 232),
-            pink_300: rgb(249, 168, 212),
-            pink_400: rgb(244, 114, 182),
-            pink_500: rgb(236, 72, 153),
-            pink_600: rgb(219, 39, 119),
-            pink_700: rgb(190, 24, 93),
-            pink_800: rgb(157, 23, 77),
-            pink_900: rgb(131, 24, 67),
-            pink_950: rgb(80, 7, 36),
-
-            rose_50: rgb(255, 241, 242),
-            rose_100: rgb(255, 228, 230),
-            rose_200: rgb(254, 205, 211),
-            rose_300: rgb(253, 164, 175),
-            rose_400: rgb(251, 113, 133),
-            rose_500: rgb(244, 63, 94),
-            rose_600: rgb(225, 29, 72),
-            rose_700: rgb(190, 18, 60),
-            rose_800: rgb(159, 18, 57),
-            rose_900: rgb(136, 19, 55),
-            rose_950: rgb(76, 5, 25),
-        }
-    }
-}
-
-impl Default for Colors {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ------------------------------------------------------------------------
-// Palette-derived surfaces
-// ------------------------------------------------------------------------
-
-/// Internal bundle of the surface tokens for a given base palette.
-struct SurfaceTokens {
-    bg: Color,
-    fg: Color,
-    card: Color,
-    popover: Color,
-    muted: Color,
-    muted_fg: Color,
-    secondary: Color,
-    secondary_fg: Color,
-    accent: Color,
-    accent_fg: Color,
-    border: Color,
-    input: Color,
-    ring: Color,
-    primary: Color,
-    primary_fg: Color,
-}
-
-/// Build shadcn-shaped surfaces from a Tailwind palette family.
+/// Install `theme` as the current thread's active theme.
 ///
-/// Dark: `bg 950 → card 900 → popover/muted/secondary 800 → accent 700`,
-/// with `ring = 500` and `primary = 200`. Light: `bg 50 → muted/secondary/
-/// accent 100 → border 200`, with `card = white`, `ring = 400`, and
-/// `primary = 900`.
-macro_rules! surface_tokens {
-    ($c:expr, $family:ident, $dark:expr) => {{
-        let c = $c;
-        if $dark {
-            paste! {
-                SurfaceTokens {
-                    bg: c.[<$family _950>],
-                    fg: c.[<$family _50>],
-                    card: c.[<$family _900>],
-                    popover: c.[<$family _800>],
-                    muted: c.[<$family _800>],
-                    muted_fg: c.[<$family _400>],
-                    secondary: c.[<$family _800>],
-                    secondary_fg: c.[<$family _50>],
-                    accent: c.[<$family _700>],
-                    accent_fg: c.[<$family _50>],
-                    border: c.[<$family _800>],
-                    input: c.[<$family _800>],
-                    ring: c.[<$family _500>],
-                    primary: c.[<$family _200>],
-                    primary_fg: c.[<$family _900>],
-                }
-            }
-        } else {
-            paste! {
-                SurfaceTokens {
-                    bg: c.[<$family _50>],
-                    fg: c.[<$family _950>],
-                    card: c.white,
-                    popover: c.white,
-                    muted: c.[<$family _100>],
-                    muted_fg: c.[<$family _500>],
-                    secondary: c.[<$family _100>],
-                    secondary_fg: c.[<$family _900>],
-                    accent: c.[<$family _100>],
-                    accent_fg: c.[<$family _900>],
-                    border: c.[<$family _200>],
-                    input: c.[<$family _200>],
-                    ring: c.[<$family _400>],
-                    primary: c.[<$family _900>],
-                    primary_fg: c.[<$family _50>],
-                }
-            }
-        }
-    }};
+/// Called automatically by [`use_init_theme_registry`] and
+/// [`ThemeHandle::set_active`]. `Style::default()` calls created **after**
+/// this point will pick up the theme's `background` / `foreground`
+/// tokens.
+pub fn set_active_theme(theme: Arc<Theme>) {
+    ACTIVE_THEME.with(|slot| *slot.borrow_mut() = Some(theme));
 }
 
-// ------------------------------------------------------------------------
-// Semantic theme
-// ------------------------------------------------------------------------
+/// Read the current thread's active theme.
+///
+/// Falls back to [`Theme::empty_light`] when no theme has been installed
+/// (unit tests, headless runs, etc.), so `Style::default()` never panics.
+pub fn active_theme() -> Arc<Theme> {
+    ACTIVE_THEME
+        .with(|slot| slot.borrow().clone())
+        .unwrap_or_else(|| Arc::new(Theme::empty_light()))
+}
 
-/// Semantic FreyaCN theme, aligned with shadcn/ui v4.
-#[derive(Clone, Copy, Debug, PartialEq)]
+// ---------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum ThemeError {
+    Json(serde_json::Error),
+    Io(std::io::Error),
+    InvalidHex(String),
+    InvalidPaletteRef(String),
+    UnknownPaletteStep(String),
+    UnknownTheme(String),
+    NotASolidColor(String),
+}
+
+impl std::fmt::Display for ThemeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json(e) => write!(f, "json error: {e}"),
+            Self::Io(e) => write!(f, "io error: {e}"),
+            Self::InvalidHex(s) => write!(f, "invalid hex color: {s}"),
+            Self::InvalidPaletteRef(s) => write!(f, "invalid palette reference: {s}"),
+            Self::UnknownPaletteStep(s) => write!(f, "unknown palette step: {s}"),
+            Self::UnknownTheme(s) => write!(f, "unknown theme id: {s}"),
+            Self::NotASolidColor(s) => write!(f, "token is not a solid color: {s}"),
+        }
+    }
+}
+impl std::error::Error for ThemeError {}
+impl From<serde_json::Error> for ThemeError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Json(e)
+    }
+}
+impl From<std::io::Error> for ThemeError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+// ---------------------------------------------------------------------
+// Appearance + interaction state
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    Light,
+    Dark,
+}
+
+/// Interaction / value states a component can enter. Mirrors gpui-kit's
+/// set. `ComponentState::Base` is the fallback used when nothing is active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ComponentState {
+    Base,
+    Hover,
+    Active,
+    Focus,
+    FocusVisible,
+    Disabled,
+    Checked,
+    Indeterminate,
+    Selected,
+    Pressed,
+    Open,
+}
+
+impl ComponentState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ComponentState::Base => "base",
+            ComponentState::Hover => "hover",
+            ComponentState::Active => "active",
+            ComponentState::Focus => "focus",
+            ComponentState::FocusVisible => "focus-visible",
+            ComponentState::Disabled => "disabled",
+            ComponentState::Checked => "checked",
+            ComponentState::Indeterminate => "indeterminate",
+            ComponentState::Selected => "selected",
+            ComponentState::Pressed => "pressed",
+            ComponentState::Open => "open",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// JSON shapes
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TokenValue {
+    /// `"#fff"`, `"{blue.500}"`, `"{neutral.950}/24"`, `"transparent"`.
+    Color(String),
+    Linear {
+        linear: LinearSpec,
+    },
+    Radial {
+        radial: RadialSpec,
+    },
+    Conic {
+        conic: ConicSpec,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Stop {
+    pub color: String,
+    pub at: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinearSpec {
+    #[serde(default)]
+    pub angle: f32,
+    pub stops: Vec<Stop>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RadialSpec {
+    #[serde(default = "c05")]
+    pub center: (f32, f32),
+    #[serde(default = "one")]
+    pub radius: f32,
+    pub stops: Vec<Stop>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConicSpec {
+    #[serde(default)]
+    pub angle: f32,
+    #[serde(default = "c05")]
+    pub center: (f32, f32),
+    pub stops: Vec<Stop>,
+}
+
+fn c05() -> (f32, f32) {
+    (0.5, 0.5)
+}
+fn one() -> f32 {
+    1.0
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypographyConfig {
+    #[serde(default)]
+    pub font_family: HashMap<String, String>,
+    #[serde(default)]
+    pub font_size: HashMap<String, (f32, f32)>,
+    #[serde(default)]
+    pub font_weight: HashMap<String, u16>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MotionConfig {
+    #[serde(default)]
+    pub duration: HashMap<String, u32>,
+    #[serde(default)]
+    pub easing: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeConfig {
+    pub id: String,
+    pub name: String,
+    pub appearance: Appearance,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub author: Option<String>,
+
+    /// Optional palette overrides on top of the built-in Tailwind scale.
+    /// Key = `"group.step"`, value = hex string.
+    #[serde(default)]
+    pub palette: HashMap<String, String>,
+
+    pub semantic: HashMap<String, TokenValue>,
+
+    #[serde(default)]
+    pub components: serde_json::Value,
+
+    #[serde(default)]
+    pub radius: HashMap<String, f32>,
+    #[serde(default)]
+    pub spacing: HashMap<String, f32>,
+    #[serde(default)]
+    pub typography: TypographyConfig,
+    #[serde(default)]
+    pub shadows: HashMap<String, String>,
+    #[serde(default)]
+    pub motion: MotionConfig,
+    #[serde(default, rename = "zIndex")]
+    pub z_index: HashMap<String, i32>,
+}
+
+// ---------------------------------------------------------------------
+// Resolved theme
+// ---------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
-    pub is_dark: bool,
-    pub colors: Colors,
+    pub id: String,
+    pub name: String,
+    pub appearance: Appearance,
+    pub version: String,
+    pub author: Option<String>,
 
-    pub background: Color,
-    pub foreground: Color,
+    palette_overrides: HashMap<String, Color>,
+    semantic: HashMap<String, Fill>,
 
-    pub primary: Color,
-    pub primary_foreground: Color,
+    pub components: serde_json::Value,
 
-    pub secondary: Color,
-    pub secondary_foreground: Color,
-
-    pub muted: Color,
-    pub muted_foreground: Color,
-
-    pub accent: Color,
-    pub accent_foreground: Color,
-
-    pub destructive: Color,
-    pub destructive_foreground: Color,
-
-    pub card: Color,
-    pub card_foreground: Color,
-
-    pub popover: Color,
-    pub popover_foreground: Color,
-
-    pub border: Color,
-    pub input: Color,
-    pub ring: Color,
-
-    pub chart_1: Color,
-    pub chart_2: Color,
-    pub chart_3: Color,
-    pub chart_4: Color,
-    pub chart_5: Color,
-
-    pub sidebar: Color,
-    pub sidebar_foreground: Color,
-    pub sidebar_primary: Color,
-    pub sidebar_primary_foreground: Color,
-    pub sidebar_accent: Color,
-    pub sidebar_accent_foreground: Color,
-    pub sidebar_border: Color,
-    pub sidebar_ring: Color,
-
-    pub disabled: Color,
-    pub disabled_foreground: Color,
-
-    pub radius_sm: f32,
-    pub radius_md: f32,
-    pub radius_lg: f32,
-    pub radius_xl: f32,
+    pub radius: HashMap<String, f32>,
+    pub spacing: HashMap<String, f32>,
+    pub typography: TypographyConfig,
+    pub shadows: HashMap<String, String>,
+    pub motion: MotionConfig,
+    pub z_index: HashMap<String, i32>,
 }
 
 impl Theme {
-    fn luminance(color: Color) -> f32 {
-        let r = color.r() as f32 / 255.0;
-        let g = color.g() as f32 / 255.0;
-        let b = color.b() as f32 / 255.0;
-        0.299 * r + 0.587 * g + 0.114 * b
+    pub fn from_json_str(s: &str) -> Result<Self, ThemeError> {
+        let cfg: ThemeConfig = serde_json::from_str(s)?;
+        Self::from_config(cfg)
     }
 
-    /// Start with a **light** theme using shadcn's default `neutral` base.
-    pub fn light() -> Self {
-        Self::from_base("neutral", false)
-    }
-
-    /// Start with a **dark** theme using shadcn's default `neutral` base.
-    pub fn dark() -> Self {
-        Self::from_base("neutral", true)
-    }
-
-    /// Change the base palette, keeping the current light/dark mode.
-    pub fn base_color(self, base: &str) -> Self {
-        Self::from_base(base, self.is_dark)
-    }
-
-    /// Build a theme from a base palette and a dark/light flag.
-    ///
-    /// `"neutral"` produces shadcn's exact `globals.css` values; every
-    /// other palette derives the same surface *structure* from the
-    /// Tailwind scale.
-    ///
-    /// # Panics
-    /// Panics if `base` is not a known palette name.
-    pub fn from_base(base: &str, dark: bool) -> Self {
-        let colors = Colors::default();
-
-        if base == "neutral" {
-            return Self::from_shadcn_neutral(colors, dark);
+    pub fn from_config(cfg: ThemeConfig) -> Result<Self, ThemeError> {
+        let mut palette_overrides = HashMap::new();
+        for (path, hex) in &cfg.palette {
+            palette_overrides.insert(path.clone(), parse_hex(hex)?);
         }
 
-        let t = match base {
-            "slate" => surface_tokens!(colors, slate, dark),
-            "stone" => surface_tokens!(colors, stone, dark),
-            "mauve" => surface_tokens!(colors, mauve, dark),
-            "olive" => surface_tokens!(colors, olive, dark),
-            "mist" => surface_tokens!(colors, mist, dark),
-            "taupe" => surface_tokens!(colors, taupe, dark),
-            "zinc" => surface_tokens!(colors, zinc, dark),
-            "gray" => surface_tokens!(colors, gray, dark),
-            _ => panic!("Unknown base palette: {}", base),
-        };
+        let empty_semantic = HashMap::new();
+        let mut semantic = HashMap::new();
+        for (key, val) in &cfg.semantic {
+            // Semantic self-references are not resolved during this pass
+            // (would be circular). Use plain palette refs in `semantic`;
+            // use `{semantic.*}` inside `components`.
+            let fill = resolve_fill(val, &palette_overrides, &empty_semantic)?;
+            semantic.insert(key.clone(), fill);
+        }
 
-        let destructive = if dark { colors.red_400 } else { colors.red_600 };
-        let chart_1 = if dark {
-            shadcn::DARK_CHART_1
-        } else {
-            shadcn::LIGHT_CHART_1
-        };
-        let chart_2 = if dark {
-            shadcn::DARK_CHART_2
-        } else {
-            shadcn::LIGHT_CHART_2
-        };
-        let chart_3 = if dark {
-            shadcn::DARK_CHART_3
-        } else {
-            shadcn::LIGHT_CHART_3
-        };
-        let chart_4 = if dark {
-            shadcn::DARK_CHART_4
-        } else {
-            shadcn::LIGHT_CHART_4
-        };
-        let chart_5 = if dark {
-            shadcn::DARK_CHART_5
-        } else {
-            shadcn::LIGHT_CHART_5
-        };
+        Ok(Self {
+            id: cfg.id,
+            name: cfg.name,
+            appearance: cfg.appearance,
+            version: cfg.version,
+            author: cfg.author,
+            palette_overrides,
+            semantic,
+            components: cfg.components,
+            radius: cfg.radius,
+            spacing: cfg.spacing,
+            typography: cfg.typography,
+            shadows: cfg.shadows,
+            motion: cfg.motion,
+            z_index: cfg.z_index,
+        })
+    }
 
+    // ---- Semantic lookups ----
+
+    pub fn fill(&self, key: &str) -> Option<Fill> {
+        self.semantic.get(key).cloned()
+    }
+
+    pub fn color(&self, key: &str) -> Option<Color> {
+        match self.semantic.get(key)? {
+            Fill::Color(c) => Some(*c),
+            _ => None,
+        }
+    }
+
+    // ---- Radius / spacing shortcuts ----
+
+    pub fn radius(&self, key: &str) -> f32 {
+        self.radius.get(key).copied().unwrap_or(8.0)
+    }
+    pub fn spacing(&self, key: &str) -> f32 {
+        self.spacing.get(key).copied().unwrap_or(0.0)
+    }
+
+    // ---- Component token access ----
+
+    pub fn component(&self, path: &str) -> Option<&serde_json::Value> {
+        let mut cur = &self.components;
+        for part in path.split('.') {
+            cur = cur.get(part)?;
+        }
+        Some(cur)
+    }
+
+    pub fn component_color(&self, path: &str) -> Option<Color> {
+        let v = self.component(path)?;
+        let s = v.as_str()?;
+        resolve_color(s, &self.palette_overrides, &self.semantic).ok()
+    }
+
+    pub fn component_fill(&self, path: &str) -> Option<Fill> {
+        let v = self.component(path)?;
+        if let Some(s) = v.as_str() {
+            return resolve_color(s, &self.palette_overrides, &self.semantic)
+                .ok()
+                .map(Fill::Color);
+        }
+        serde_json::from_value::<TokenValue>(v.clone())
+            .ok()
+            .and_then(|t| resolve_fill(&t, &self.palette_overrides, &self.semantic).ok())
+    }
+
+    pub fn component_radius(&self, path: &str) -> Option<f32> {
+        let v = self.component(path)?;
+        if let Some(n) = v.as_f64() {
+            return Some(n as f32);
+        }
+        if let Some(s) = v.as_str() {
+            return self.radius.get(s).copied();
+        }
+        None
+    }
+
+    // ---- State-aware accessors ----
+
+    /// Look up `{path}.{state}.{field}`, falling back to
+    /// `{path}.{field}`. Precedence (e.g. `active` > `hover`) is the
+    /// caller's responsibility — pass exactly one state.
+    pub fn state_fill(&self, path: &str, state: ComponentState, field: &str) -> Option<Fill> {
+        if state != ComponentState::Base {
+            let with_state = format!("{}.{}.{}", path, state.as_str(), field);
+            if let Some(f) = self.component_fill(&with_state) {
+                return Some(f);
+            }
+        }
+        self.component_fill(&format!("{}.{}", path, field))
+    }
+
+    pub fn state_color(&self, path: &str, state: ComponentState, field: &str) -> Option<Color> {
+        if state != ComponentState::Base {
+            let with_state = format!("{}.{}.{}", path, state.as_str(), field);
+            if let Some(c) = self.component_color(&with_state) {
+                return Some(c);
+            }
+        }
+        self.component_color(&format!("{}.{}", path, field))
+    }
+
+    pub fn state_radius(&self, path: &str, state: ComponentState, field: &str) -> Option<f32> {
+        if state != ComponentState::Base {
+            let with_state = format!("{}.{}.{}", path, state.as_str(), field);
+            if let Some(r) = self.component_radius(&with_state) {
+                return Some(r);
+            }
+        }
+        self.component_radius(&format!("{}.{}", path, field))
+    }
+
+    // ---- Validation ----
+
+    pub fn validate(&self) -> Vec<String> {
+        const REQUIRED: &[&str] = &[
+            "background",
+            "foreground",
+            "card",
+            "cardForeground",
+            "popover",
+            "popoverForeground",
+            "primary",
+            "primaryForeground",
+            "secondary",
+            "secondaryForeground",
+            "muted",
+            "mutedForeground",
+            "accent",
+            "accentForeground",
+            "destructive",
+            "destructiveForeground",
+            "border",
+            "input",
+            "ring",
+        ];
+        let mut warnings = Vec::new();
+        for key in REQUIRED {
+            if !self.semantic.contains_key(*key) {
+                warnings.push(format!("missing required semantic token: {key}"));
+            }
+        }
+        if let (Some(bg), Some(fg)) = (self.color("background"), self.color("foreground")) {
+            let ratio = contrast_ratio(bg, fg);
+            if ratio < 4.5 {
+                warnings.push(format!("foreground/background contrast {:.2} < 4.5", ratio));
+            }
+        }
+        warnings
+    }
+
+    /// Inert fallback so components used outside a provider don't panic.
+    pub fn empty_light() -> Self {
         Self {
-            is_dark: dark,
-            colors,
-            background: t.bg,
-            foreground: t.fg,
-            primary: t.primary,
-            primary_foreground: t.primary_fg,
-            secondary: t.secondary,
-            secondary_foreground: t.secondary_fg,
-            muted: t.muted,
-            muted_foreground: t.muted_fg,
-            accent: t.accent,
-            accent_foreground: t.accent_fg,
-            destructive,
-            destructive_foreground: colors.white,
-            card: t.card,
-            card_foreground: t.fg,
-            popover: t.popover,
-            popover_foreground: t.fg,
-            border: t.border,
-            input: t.input,
-            ring: t.ring,
-            chart_1,
-            chart_2,
-            chart_3,
-            chart_4,
-            chart_5,
-            sidebar: t.bg,
-            sidebar_foreground: t.fg,
-            sidebar_primary: t.primary,
-            sidebar_primary_foreground: t.primary_fg,
-            sidebar_accent: t.accent,
-            sidebar_accent_foreground: t.accent_fg,
-            sidebar_border: t.border,
-            sidebar_ring: t.ring,
-            disabled: t.muted,
-            disabled_foreground: t.muted_fg,
-            radius_sm: 6.0,
-            radius_md: 8.0,
-            radius_lg: 10.0,
-            radius_xl: 14.0,
+            id: "fallback-light".into(),
+            name: "Fallback Light".into(),
+            appearance: Appearance::Light,
+            version: "0".into(),
+            author: None,
+            palette_overrides: HashMap::new(),
+            semantic: HashMap::new(),
+            components: serde_json::Value::Null,
+            radius: [("sm", 6.0), ("md", 8.0), ("lg", 10.0), ("xl", 14.0)]
+                .into_iter()
+                .map(|(k, v)| (k.into(), v))
+                .collect(),
+            spacing: HashMap::new(),
+            typography: TypographyConfig::default(),
+            shadows: HashMap::new(),
+            motion: MotionConfig::default(),
+            z_index: HashMap::new(),
         }
-    }
-
-    /// Build the exact shadcn/ui `neutral` theme.
-    fn from_shadcn_neutral(colors: Colors, dark: bool) -> Self {
-        if dark {
-            Self {
-                is_dark: true,
-                colors,
-                background: shadcn::DARK_BACKGROUND,
-                foreground: shadcn::DARK_FOREGROUND,
-                primary: shadcn::DARK_PRIMARY,
-                primary_foreground: shadcn::DARK_PRIMARY_FOREGROUND,
-                secondary: shadcn::DARK_SECONDARY,
-                secondary_foreground: shadcn::DARK_SECONDARY_FOREGROUND,
-                muted: shadcn::DARK_MUTED,
-                muted_foreground: shadcn::DARK_MUTED_FOREGROUND,
-                accent: shadcn::DARK_ACCENT,
-                accent_foreground: shadcn::DARK_ACCENT_FOREGROUND,
-                destructive: shadcn::DARK_DESTRUCTIVE,
-                destructive_foreground: colors.white,
-                card: shadcn::DARK_CARD,
-                card_foreground: shadcn::DARK_CARD_FOREGROUND,
-                popover: shadcn::DARK_POPOVER,
-                popover_foreground: shadcn::DARK_POPOVER_FOREGROUND,
-                border: shadcn::DARK_BORDER,
-                input: shadcn::DARK_INPUT,
-                ring: shadcn::DARK_RING,
-                chart_1: shadcn::DARK_CHART_1,
-                chart_2: shadcn::DARK_CHART_2,
-                chart_3: shadcn::DARK_CHART_3,
-                chart_4: shadcn::DARK_CHART_4,
-                chart_5: shadcn::DARK_CHART_5,
-                sidebar: shadcn::DARK_SIDEBAR,
-                sidebar_foreground: shadcn::DARK_SIDEBAR_FOREGROUND,
-                sidebar_primary: shadcn::DARK_SIDEBAR_PRIMARY,
-                sidebar_primary_foreground: shadcn::DARK_SIDEBAR_PRIMARY_FOREGROUND,
-                sidebar_accent: shadcn::DARK_SIDEBAR_ACCENT,
-                sidebar_accent_foreground: shadcn::DARK_SIDEBAR_ACCENT_FOREGROUND,
-                sidebar_border: shadcn::DARK_SIDEBAR_BORDER,
-                sidebar_ring: shadcn::DARK_SIDEBAR_RING,
-                disabled: shadcn::DARK_MUTED,
-                disabled_foreground: shadcn::DARK_MUTED_FOREGROUND,
-                radius_sm: 6.0,
-                radius_md: 8.0,
-                radius_lg: 10.0,
-                radius_xl: 14.0,
-            }
-        } else {
-            Self {
-                is_dark: false,
-                colors,
-                background: shadcn::LIGHT_BACKGROUND,
-                foreground: shadcn::LIGHT_FOREGROUND,
-                primary: shadcn::LIGHT_PRIMARY,
-                primary_foreground: shadcn::LIGHT_PRIMARY_FOREGROUND,
-                secondary: shadcn::LIGHT_SECONDARY,
-                secondary_foreground: shadcn::LIGHT_SECONDARY_FOREGROUND,
-                muted: shadcn::LIGHT_MUTED,
-                muted_foreground: shadcn::LIGHT_MUTED_FOREGROUND,
-                accent: shadcn::LIGHT_ACCENT,
-                accent_foreground: shadcn::LIGHT_ACCENT_FOREGROUND,
-                destructive: shadcn::LIGHT_DESTRUCTIVE,
-                destructive_foreground: colors.white,
-                card: shadcn::LIGHT_CARD,
-                card_foreground: shadcn::LIGHT_CARD_FOREGROUND,
-                popover: shadcn::LIGHT_POPOVER,
-                popover_foreground: shadcn::LIGHT_POPOVER_FOREGROUND,
-                border: shadcn::LIGHT_BORDER,
-                input: shadcn::LIGHT_INPUT,
-                ring: shadcn::LIGHT_RING,
-                chart_1: shadcn::LIGHT_CHART_1,
-                chart_2: shadcn::LIGHT_CHART_2,
-                chart_3: shadcn::LIGHT_CHART_3,
-                chart_4: shadcn::LIGHT_CHART_4,
-                chart_5: shadcn::LIGHT_CHART_5,
-                sidebar: shadcn::LIGHT_SIDEBAR,
-                sidebar_foreground: shadcn::LIGHT_SIDEBAR_FOREGROUND,
-                sidebar_primary: shadcn::LIGHT_SIDEBAR_PRIMARY,
-                sidebar_primary_foreground: shadcn::LIGHT_SIDEBAR_PRIMARY_FOREGROUND,
-                sidebar_accent: shadcn::LIGHT_SIDEBAR_ACCENT,
-                sidebar_accent_foreground: shadcn::LIGHT_SIDEBAR_ACCENT_FOREGROUND,
-                sidebar_border: shadcn::LIGHT_SIDEBAR_BORDER,
-                sidebar_ring: shadcn::LIGHT_SIDEBAR_RING,
-                disabled: shadcn::LIGHT_MUTED,
-                disabled_foreground: shadcn::LIGHT_MUTED_FOREGROUND,
-                radius_sm: 6.0,
-                radius_md: 8.0,
-                radius_lg: 10.0,
-                radius_xl: 14.0,
-            }
-        }
-    }
-
-    /// Override the accent colour from a Tailwind palette family.
-    pub fn theme_color(self, theme: &str) -> Self {
-        let colors = self.colors;
-        let primary = if self.is_dark {
-            match theme {
-                "stone" => colors.stone_400,
-                "mauve" => colors.mauve_400,
-                "olive" => colors.olive_400,
-                "mist" => colors.mist_400,
-                "taupe" => colors.taupe_400,
-                "slate" => colors.slate_400,
-                "gray" => colors.gray_400,
-                "zinc" => colors.zinc_400,
-                "neutral" => colors.neutral_50,
-                "red" => colors.red_400,
-                "orange" => colors.orange_400,
-                "amber" => colors.amber_400,
-                "yellow" => colors.yellow_400,
-                "lime" => colors.lime_400,
-                "green" => colors.green_400,
-                "emerald" => colors.emerald_400,
-                "teal" => colors.teal_400,
-                "cyan" => colors.cyan_400,
-                "sky" => colors.sky_400,
-                "blue" => colors.blue_400,
-                "indigo" => colors.indigo_400,
-                "violet" => colors.violet_400,
-                "purple" => colors.purple_400,
-                "fuchsia" => colors.fuchsia_400,
-                "pink" => colors.pink_400,
-                "rose" => colors.rose_400,
-                _ => panic!("Unknown theme palette: {}", theme),
-            }
-        } else {
-            match theme {
-                "stone" => colors.stone_950,
-                "mauve" => colors.mauve_950,
-                "olive" => colors.olive_950,
-                "mist" => colors.mist_950,
-                "taupe" => colors.taupe_950,
-                "slate" => colors.slate_950,
-                "gray" => colors.gray_500,
-                "zinc" => colors.zinc_500,
-                "neutral" => colors.neutral_950,
-                "red" => colors.red_500,
-                "orange" => colors.orange_500,
-                "amber" => colors.amber_500,
-                "yellow" => colors.yellow_500,
-                "lime" => colors.lime_500,
-                "green" => colors.green_500,
-                "emerald" => colors.emerald_500,
-                "teal" => colors.teal_500,
-                "cyan" => colors.cyan_500,
-                "sky" => colors.sky_500,
-                "blue" => colors.blue_500,
-                "indigo" => colors.indigo_500,
-                "violet" => colors.violet_500,
-                "purple" => colors.purple_500,
-                "fuchsia" => colors.fuchsia_500,
-                "pink" => colors.pink_500,
-                "rose" => colors.rose_500,
-                _ => panic!("Unknown theme palette: {}", theme),
-            }
-        };
-
-        let primary_fg = if Self::luminance(primary) < 0.5 {
-            colors.white
-        } else {
-            colors.black
-        };
-
-        Self {
-            primary,
-            primary_foreground: primary_fg,
-            accent: primary,
-            accent_foreground: primary_fg,
-            ring: primary,
-            sidebar_primary: primary,
-            sidebar_primary_foreground: primary_fg,
-            sidebar_accent: primary,
-            sidebar_accent_foreground: primary_fg,
-            sidebar_ring: primary,
-            ..self
-        }
-    }
-
-    // ---- Base palette shortcuts ----
-    pub fn stone(self) -> Self {
-        self.base_color("stone")
-    }
-    pub fn mauve(self) -> Self {
-        self.base_color("mauve")
-    }
-    pub fn olive(self) -> Self {
-        self.base_color("olive")
-    }
-    pub fn mist(self) -> Self {
-        self.base_color("mist")
-    }
-    pub fn taupe(self) -> Self {
-        self.base_color("taupe")
-    }
-    pub fn slate(self) -> Self {
-        self.base_color("slate")
-    }
-    pub fn gray(self) -> Self {
-        self.base_color("gray")
-    }
-    pub fn zinc(self) -> Self {
-        self.base_color("zinc")
-    }
-    pub fn neutral(self) -> Self {
-        self.base_color("neutral")
-    }
-
-    // ---- Radius overrides ----
-    pub fn radius_sm(mut self, value: f32) -> Self {
-        self.radius_sm = value;
-        self
-    }
-    pub fn radius_md(mut self, value: f32) -> Self {
-        self.radius_md = value;
-        self
-    }
-    pub fn radius_lg(mut self, value: f32) -> Self {
-        self.radius_lg = value;
-        self
-    }
-    pub fn radius_xl(mut self, value: f32) -> Self {
-        self.radius_xl = value;
-        self
-    }
-    pub fn radius(mut self, value: f32) -> Self {
-        self.radius_sm = (value - 4.0).max(0.0);
-        self.radius_md = (value - 2.0).max(0.0);
-        self.radius_lg = value;
-        self.radius_xl = value + 4.0;
-        self
     }
 }
 
-// ================================================================
-// Hooks
-// ================================================================
+// ---------------------------------------------------------------------
+// Named semantic getters
+// ---------------------------------------------------------------------
 
-/// Provides a custom FreyaCN theme, reusing an existing context if one
-/// already exists.
-pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
-    use_hook(|| {
-        if let Some(mut existing) = try_consume_context::<State<Theme>>() {
-            existing.set(theme);
-            existing
-        } else {
-            let state = State::create(theme);
-            provide_context(state);
-            state
+macro_rules! getters {
+    ($($name:ident => $key:literal | $fallback:expr),* $(,)?) => {
+        impl Theme {
+            $(
+                #[inline] pub fn $name(&self) -> Color {
+                    self.color($key).unwrap_or($fallback)
+                }
+                paste! {
+                    #[inline] pub fn [<$name _fill>](&self) -> Fill {
+                        self.fill($key).unwrap_or(Fill::Color($fallback))
+                    }
+                }
+            )*
         }
+    };
+}
+
+getters! {
+    background              => "background"              | Color::from_argb(0, 0, 0, 0),
+    foreground              => "foreground"              | Color::from_rgb(0, 0, 0),
+    card                    => "card"                    | Color::from_argb(0, 0, 0, 0),
+    card_foreground         => "cardForeground"          | Color::from_rgb(0, 0, 0),
+    popover                 => "popover"                 | Color::from_argb(0, 0, 0, 0),
+    popover_foreground      => "popoverForeground"       | Color::from_rgb(0, 0, 0),
+    primary                 => "primary"                 | Color::from_rgb(0, 0, 0),
+    primary_foreground      => "primaryForeground"       | Color::from_rgb(255, 255, 255),
+    secondary               => "secondary"               | Color::from_argb(0, 0, 0, 0),
+    secondary_foreground    => "secondaryForeground"     | Color::from_rgb(0, 0, 0),
+    muted                   => "muted"                   | Color::from_argb(0, 0, 0, 0),
+    muted_foreground        => "mutedForeground"         | Color::from_rgb(100, 100, 100),
+    accent                  => "accent"                  | Color::from_argb(0, 0, 0, 0),
+    accent_foreground       => "accentForeground"        | Color::from_rgb(0, 0, 0),
+    destructive             => "destructive"             | Color::from_rgb(220, 38, 38),
+    destructive_foreground  => "destructiveForeground"   | Color::from_rgb(255, 255, 255),
+    border                  => "border"                  | Color::from_rgb(200, 200, 200),
+    input                   => "input"                   | Color::from_rgb(200, 200, 200),
+    ring                    => "ring"                    | Color::from_rgb(100, 100, 255),
+    disabled                => "disabled"                | Color::from_argb(0, 0, 0, 0),
+    disabled_foreground     => "disabledForeground"      | Color::from_rgb(150, 150, 150),
+    sidebar                 => "sidebar"                 | Color::from_argb(0, 0, 0, 0),
+    sidebar_foreground      => "sidebarForeground"       | Color::from_rgb(0, 0, 0),
+    sidebar_primary         => "sidebarPrimary"          | Color::from_rgb(0, 0, 0),
+    sidebar_primary_foreground => "sidebarPrimaryForeground" | Color::from_rgb(255, 255, 255),
+    sidebar_accent          => "sidebarAccent"           | Color::from_argb(0, 0, 0, 0),
+    sidebar_accent_foreground => "sidebarAccentForeground" | Color::from_rgb(0, 0, 0),
+    sidebar_border          => "sidebarBorder"           | Color::from_rgb(200, 200, 200),
+    sidebar_ring            => "sidebarRing"             | Color::from_rgb(100, 100, 255),
+    chart_1                 => "chart1"                  | Color::from_rgb(120, 120, 120),
+    chart_2                 => "chart2"                  | Color::from_rgb(120, 120, 120),
+    chart_3                 => "chart3"                  | Color::from_rgb(120, 120, 120),
+    chart_4                 => "chart4"                  | Color::from_rgb(120, 120, 120),
+    chart_5                 => "chart5"                  | Color::from_rgb(120, 120, 120),
+}
+
+// ---------------------------------------------------------------------
+// Palette lookup — uses the functions exported by `colors.rs`
+// ---------------------------------------------------------------------
+
+fn lookup_palette_styled(path: &str) -> Option<StyledColor> {
+    let (group, step) = path.split_once('.')?;
+
+    match (group, step) {
+        ("white", _) => return Some(crate::styling::colors::white()),
+        ("black", _) => return Some(crate::styling::colors::black()),
+        _ => {}
+    }
+
+    macro_rules! try_family {
+        ($fam:ident) => {
+            paste! {
+                match step {
+                    "50"  => Some(crate::styling::colors::[<$fam _ 50>]()),
+                    "100" => Some(crate::styling::colors::[<$fam _ 100>]()),
+                    "200" => Some(crate::styling::colors::[<$fam _ 200>]()),
+                    "300" => Some(crate::styling::colors::[<$fam _ 300>]()),
+                    "400" => Some(crate::styling::colors::[<$fam _ 400>]()),
+                    "500" => Some(crate::styling::colors::[<$fam _ 500>]()),
+                    "600" => Some(crate::styling::colors::[<$fam _ 600>]()),
+                    "700" => Some(crate::styling::colors::[<$fam _ 700>]()),
+                    "800" => Some(crate::styling::colors::[<$fam _ 800>]()),
+                    "900" => Some(crate::styling::colors::[<$fam _ 900>]()),
+                    "950" => Some(crate::styling::colors::[<$fam _ 950>]()),
+                    _ => None,
+                }
+            }
+        };
+    }
+
+    match group {
+        "stone" => try_family!(stone),
+        "mauve" => try_family!(mauve),
+        "olive" => try_family!(olive),
+        "mist" => try_family!(mist),
+        "taupe" => try_family!(taupe),
+        "slate" => try_family!(slate),
+        "gray" => try_family!(gray),
+        "zinc" => try_family!(zinc),
+        "neutral" => try_family!(neutral),
+        "red" => try_family!(red),
+        "orange" => try_family!(orange),
+        "amber" => try_family!(amber),
+        "yellow" => try_family!(yellow),
+        "lime" => try_family!(lime),
+        "green" => try_family!(green),
+        "emerald" => try_family!(emerald),
+        "teal" => try_family!(teal),
+        "cyan" => try_family!(cyan),
+        "sky" => try_family!(sky),
+        "blue" => try_family!(blue),
+        "indigo" => try_family!(indigo),
+        "violet" => try_family!(violet),
+        "purple" => try_family!(purple),
+        "fuchsia" => try_family!(fuchsia),
+        "pink" => try_family!(pink),
+        "rose" => try_family!(rose),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------
+// Resolution helpers
+// ---------------------------------------------------------------------
+
+fn parse_hex(s: &str) -> Result<Color, ThemeError> {
+    let s = s.trim().trim_start_matches('#');
+    let expand = |h: &str| -> String {
+        let mut out = String::with_capacity(h.len() * 2);
+        for ch in h.chars() {
+            out.push(ch);
+            out.push(ch);
+        }
+        out
+    };
+    let (rgb, alpha) = match s.len() {
+        3 | 4 => {
+            let a = if s.len() == 4 {
+                u8::from_str_radix(&expand(&s[3..]), 16)
+                    .map_err(|_| ThemeError::InvalidHex(s.into()))?
+            } else {
+                255
+            };
+            (expand(&s[..3]), a)
+        }
+        6 | 8 => {
+            let a = if s.len() == 8 {
+                u8::from_str_radix(&s[6..8], 16).map_err(|_| ThemeError::InvalidHex(s.into()))?
+            } else {
+                255
+            };
+            (s[..6].to_string(), a)
+        }
+        _ => return Err(ThemeError::InvalidHex(s.into())),
+    };
+    let r = u8::from_str_radix(&rgb[0..2], 16).map_err(|_| ThemeError::InvalidHex(s.into()))?;
+    let g = u8::from_str_radix(&rgb[2..4], 16).map_err(|_| ThemeError::InvalidHex(s.into()))?;
+    let b = u8::from_str_radix(&rgb[4..6], 16).map_err(|_| ThemeError::InvalidHex(s.into()))?;
+    Ok(Color::from_argb(alpha, r, g, b))
+}
+
+fn apply_alpha_pct(c: Color, pct: Option<f32>) -> Color {
+    match pct {
+        Some(p) => {
+            let a = (p.clamp(0.0, 100.0) / 100.0 * 255.0).round() as u8;
+            c.with_a(a)
+        }
+        None => c,
+    }
+}
+
+fn with_alpha_pct(styled: StyledColor, pct: Option<f32>) -> Result<Color, ThemeError> {
+    let styled = match pct {
+        Some(p) => styled.with_opacity((p / 100.0).clamp(0.0, 1.0)),
+        None => styled,
+    };
+    styled
+        .to_color()
+        .ok_or_else(|| ThemeError::NotASolidColor("gradient".into()))
+}
+
+/// Resolve a single color token (with optional `/NN` suffix).
+pub fn resolve_color(
+    s: &str,
+    overrides: &HashMap<String, Color>,
+    semantic: &HashMap<String, Fill>,
+) -> Result<Color, ThemeError> {
+    let s = s.trim();
+
+    if s.eq_ignore_ascii_case("transparent") {
+        return Ok(Color::from_argb(0, 0, 0, 0));
+    }
+
+    if let Some(inner) = s.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
+        let (path, alpha_pct) = match inner.split_once('/') {
+            Some((p, a)) => (
+                p,
+                Some(
+                    a.parse::<f32>()
+                        .map_err(|_| ThemeError::InvalidPaletteRef(s.into()))?,
+                ),
+            ),
+            None => (inner, None),
+        };
+
+        // `{semantic.foo}` — already-resolved
+        if let Some(key) = path.strip_prefix("semantic.") {
+            let base = match semantic.get(key) {
+                Some(Fill::Color(c)) => *c,
+                _ => return Err(ThemeError::NotASolidColor(path.into())),
+            };
+            return Ok(apply_alpha_pct(base, alpha_pct));
+        }
+
+        // User palette override
+        if let Some(c) = overrides.get(path) {
+            return Ok(apply_alpha_pct(*c, alpha_pct));
+        }
+
+        // Built-in palette from `colors.rs`
+        let styled = lookup_palette_styled(path)
+            .ok_or_else(|| ThemeError::UnknownPaletteStep(path.into()))?;
+        return with_alpha_pct(styled, alpha_pct);
+    }
+
+    parse_hex(s)
+}
+
+fn build_stops(
+    stops: &[Stop],
+    overrides: &HashMap<String, Color>,
+) -> Result<Vec<(Color, f32)>, ThemeError> {
+    stops
+        .iter()
+        .map(|s| Ok((resolve_color(&s.color, overrides, &HashMap::new())?, s.at)))
+        .collect()
+}
+
+pub fn resolve_fill(
+    token: &TokenValue,
+    overrides: &HashMap<String, Color>,
+    semantic: &HashMap<String, Fill>,
+) -> Result<Fill, ThemeError> {
+    match token {
+        TokenValue::Color(s) => Ok(Fill::Color(resolve_color(s, overrides, semantic)?)),
+        TokenValue::Linear { linear } => {
+            let mut g = LinearGradient::new().angle(linear.angle);
+            for (color, at) in build_stops(&linear.stops, overrides)? {
+                g = g.stop((color, at));
+            }
+            Ok(Fill::from(g))
+        }
+        TokenValue::Radial { radial } => {
+            // Freya's `RadialGradient` only accepts stops; `center` /
+            // `radius` from the schema are kept for forward compatibility.
+            let _ = (radial.center, radial.radius);
+            let mut g = RadialGradient::new();
+            for (color, at) in build_stops(&radial.stops, overrides)? {
+                g = g.stop((color, at));
+            }
+            Ok(Fill::from(g))
+        }
+        TokenValue::Conic { conic } => {
+            // `center` is ignored: Freya's `ConicGradient` only accepts
+            // `.angle(..)` and `.stop(..)`.
+            let _ = conic.center;
+            let mut g = ConicGradient::new().angle(conic.angle);
+            for (color, at) in build_stops(&conic.stops, overrides)? {
+                g = g.stop((color, at));
+            }
+            Ok(Fill::from(g))
+        }
+    }
+}
+
+fn contrast_ratio(a: Color, b: Color) -> f32 {
+    fn lum(c: Color) -> f32 {
+        let f = |v: u8| {
+            let v = v as f32 / 255.0;
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * f(c.r()) + 0.7152 * f(c.g()) + 0.0722 * f(c.b())
+    }
+    let (l1, l2) = {
+        let x = lum(a);
+        let y = lum(b);
+        if x > y { (x, y) } else { (y, x) }
+    };
+    (l1 + 0.05) / (l2 + 0.05)
+}
+
+// ---------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------
+
+#[derive(Default)]
+pub struct ThemeRegistry {
+    themes: RwLock<HashMap<String, Arc<Theme>>>,
+    active_id: RwLock<Option<String>>,
+}
+
+impl ThemeRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn load(&self, json: &str) -> Result<Arc<Theme>, ThemeError> {
+        let cfg: ThemeConfig = serde_json::from_str(json)?;
+        let theme = Arc::new(Theme::from_config(cfg)?);
+        for w in theme.validate() {
+            eprintln!("theme '{}': {}", theme.id, w);
+        }
+        let id = theme.id.clone();
+        self.themes
+            .write()
+            .unwrap()
+            .insert(id.clone(), theme.clone());
+        let mut active = self.active_id.write().unwrap();
+        if active.is_none() {
+            *active = Some(id);
+        }
+        Ok(theme)
+    }
+
+    pub fn load_dir(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+        let mut count = 0usize;
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let s = std::fs::read_to_string(&path)?;
+                self.load(&s)?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Re-read every `.json` in `dir` and update the registry in place.
+    /// Removed files are not pruned — call `remove(id)` first if needed.
+    pub fn reload_dir(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+        self.load_dir(dir)
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<Theme>> {
+        self.themes.read().unwrap().get(id).cloned()
+    }
+
+    pub fn active(&self) -> Option<Arc<Theme>> {
+        let id = self.active_id.read().unwrap().clone()?;
+        self.get(&id)
+    }
+
+    pub fn set_active(&self, id: &str) -> Result<(), ThemeError> {
+        if !self.themes.read().unwrap().contains_key(id) {
+            return Err(ThemeError::UnknownTheme(id.into()));
+        }
+        *self.active_id.write().unwrap() = Some(id.into());
+        Ok(())
+    }
+
+    pub fn remove(&self, id: &str) -> Option<Arc<Theme>> {
+        let t = self.themes.write().unwrap().remove(id);
+        if let Some(t) = &t {
+            let mut active = self.active_id.write().unwrap();
+            if active.as_deref() == Some(t.id.as_str()) {
+                *active = None;
+            }
+        }
+        t
+    }
+
+    pub fn list(&self) -> Vec<Arc<Theme>> {
+        self.themes.read().unwrap().values().cloned().collect()
+    }
+
+    pub fn ids(&self) -> Vec<String> {
+        self.themes.read().unwrap().keys().cloned().collect()
+    }
+}
+
+// ---------------------------------------------------------------------
+// Freya context integration
+// ---------------------------------------------------------------------
+
+/// Reactive handle to the active theme. `active` is Freya's
+/// `State<Arc<Theme>>` — the same type returned by [`use_cn_theme`].
+#[derive(Clone)]
+pub struct ThemeHandle {
+    pub registry: Arc<ThemeRegistry>,
+    pub active: State<Arc<Theme>>,
+}
+
+impl ThemeHandle {
+    pub fn set_active(&self, id: &str) -> Result<(), ThemeError> {
+        self.registry.set_active(id)?;
+        if let Some(t) = self.registry.active() {
+            set_active_theme(t.clone()); // ← new
+            let mut active = self.active;
+            active.set(t);
+        }
+        Ok(())
+    }
+
+    pub fn reload_dir(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+        let n = self.registry.reload_dir(dir)?;
+        let prev_id = self.active.read().id.clone();
+        if let Some(t) = self.registry.get(&prev_id) {
+            set_active_theme(t.clone()); // ← new
+            let mut active = self.active;
+            active.set(t);
+        }
+        Ok(n)
+    }
+}
+
+pub fn use_init_theme_registry(initial_json: &str) -> ThemeHandle {
+    use_hook(|| {
+        let registry = Arc::new(ThemeRegistry::new());
+        let theme = registry.load(initial_json).expect("invalid initial theme");
+        set_active_theme(theme.clone()); // ← new
+        let active = State::create(theme);
+        provide_context(active);
+        ThemeHandle { registry, active }
     })
 }
 
-/// Provides a custom FreyaCN theme, always creating a new context.
-pub fn use_provide_cn_theme(theme: Theme) -> State<Theme> {
+pub fn use_init_theme_registry_from_dir(dir: &std::path::Path) -> ThemeHandle {
     use_hook(|| {
-        let state = State::create(theme);
+        let registry = Arc::new(ThemeRegistry::new());
+        registry
+            .load_dir(dir)
+            .expect("failed to load theme directory");
+        let active = registry.active().expect("no theme was loaded");
+        set_active_theme(active.clone()); // ← new
+        let state = State::create(active);
         provide_context(state);
-        state
+        ThemeHandle {
+            registry,
+            active: state,
+        }
     })
 }
 
-/// Subscribes to the current FreyaCN theme.
-pub fn use_cn_theme() -> State<Theme> {
-    use_consume::<State<Theme>>()
+/// Subscribe to the currently active theme.
+pub fn use_cn_theme() -> State<Arc<Theme>> {
+    use_consume::<State<Arc<Theme>>>()
 }
 
-/// Subscribes to the current FreyaCN theme, falling back to a default
-/// light neutral theme if none is provided.
-pub fn get_cn_theme_or_default() -> Readable<Theme> {
-    try_consume_context::<State<Theme>>()
-        .map(|v| v.into())
-        .unwrap_or_else(|| Theme::light().into())
+/// Convenience: clone the active theme out of the reactive state.
+pub fn use_theme() -> Arc<Theme> {
+    use_cn_theme().read().clone()
+}
+
+/// Fallback to a light, empty theme when none is provided.
+pub fn get_cn_theme_or_default() -> Readable<Arc<Theme>> {
+    try_consume_context::<State<Arc<Theme>>>()
+        .map(|s| s.into())
+        .unwrap_or_else(|| Arc::new(Theme::empty_light()).into())
 }

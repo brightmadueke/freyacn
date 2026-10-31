@@ -1,0 +1,104 @@
+use crate::styling::style::Style;
+use std::fmt;
+use std::sync::Arc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Variant {
+    Hover,
+    Focus,
+    FocusVisible,
+    FocusWithin,
+    Selected,
+    Checked,
+    Active,
+    Disabled,
+}
+
+impl Variant {
+    /// Lower numbers are applied first; higher numbers override.
+    ///
+    /// This is the *canonical* precedence used by [`Variants::apply_all`],
+    /// regardless of the order the caller listed them in.
+    pub fn priority(self) -> u8 {
+        match self {
+            Variant::Hover => 10,
+            Variant::Focus => 20,
+            Variant::FocusVisible => 30,
+            Variant::FocusWithin => 40,
+            Variant::Selected => 50,
+            Variant::Checked => 60,
+            Variant::Active => 70,
+            Variant::Disabled => 100,
+        }
+    }
+}
+
+/// A variant callback: takes a `Style` and returns a patched `Style`.
+///
+/// `Send + Sync` so `Style` (and therefore signals holding it) stay
+/// `Send + Sync` — required by Freya's async signal/effect machinery.
+pub type VariantFn = Arc<dyn Fn(Style) -> Style + Send + Sync>;
+
+#[derive(Clone, Default)]
+pub struct Variants {
+    entries: Vec<(Variant, VariantFn)>,
+}
+
+impl Variants {
+    pub fn push(&mut self, kind: Variant, f: VariantFn) {
+        self.entries.push((kind, f));
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Apply every registered callback for `kind`, in registration order.
+    pub fn apply(&self, kind: Variant, style: Style) -> Style {
+        self.entries
+            .iter()
+            .filter(|(k, _)| *k == kind)
+            .fold(style, |s, (_, f)| f(s))
+    }
+
+    /// Apply every kind in `kinds` in **canonical priority order**
+    /// (see [`Variant::priority`]), so a later, higher-priority
+    /// variant reliably overrides an earlier one on shared fields.
+    pub fn apply_all(&self, kinds: &[Variant], style: Style) -> Style {
+        let mut sorted: Vec<Variant> = kinds.iter().copied().collect();
+        sorted.sort_by_key(|k| k.priority());
+        sorted.dedup();
+        sorted.into_iter().fold(style, |s, k| self.apply(k, s))
+    }
+}
+
+impl fmt::Debug for Variants {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.entries.iter().map(|(k, _)| k))
+            .finish()
+    }
+}
+
+/// Compares **by kind only**, not by closure identity.
+///
+/// This is deliberate: variant closures are freshly allocated every
+/// render, so `ptr_eq`/`Arc::eq`-based comparison would make `Style`
+/// never equal across renders → spurious re-renders and effects.
+///
+/// Caveat: two styles with the *same* kinds but *different* callbacks
+/// compare equal. That is fine for the "rebuild from props every render"
+/// model — see `StyledExt` docs — but if you ever *store* applied styles
+/// in signals and rely on `PartialEq` to detect closure changes, this
+/// will silently miss them. In that case, drop `PartialEq` from `Style`
+/// entirely and rebuild from props instead of comparing styles.
+impl PartialEq for Variants {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries.len() == other.entries.len()
+            && self
+                .entries
+                .iter()
+                .zip(other.entries.iter())
+                .all(|((k1, _), (k2, _))| k1 == k2)
+    }
+}

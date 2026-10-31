@@ -34,7 +34,7 @@
 //! let style = ButtonVariant::Destructive.resolve();
 //! ```
 
-use crate::prelude::*;
+use crate::styling::style::Style;
 
 /// A type that resolves to a [`Style`].
 ///

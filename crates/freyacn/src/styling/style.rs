@@ -1,8 +1,12 @@
 use crate::styling::colors::black;
+use crate::styling::styled::StyledExt;
+use crate::styling::variants::Variants;
+use crate::theme::active_theme;
 use freya_core::data::Overflow;
 use freya_core::prelude::{
-    CornerRadius, CursorIcon, Fill, FontFeature, FontSize, FontSlant, FontWeight, FontWidth,
-    LetterSpacing, Scale, TextAlign, TextDecoration, TextOverflow, TextShadow, TransformOrigin,
+    AspectRatio, CornerRadius, CursorIcon, Fill, FontFeature, FontSize, FontSlant, FontWeight,
+    FontWidth, ImageCover, LetterSpacing, SamplingMode, Scale, TextAlign, TextDecoration,
+    TextOverflow, TextShadow, TransformOrigin,
 };
 use std::borrow::Cow;
 use torin::{
@@ -68,17 +72,55 @@ pub struct Style {
     pub cross_align: Alignment,
     pub position: Position,
     pub content: Content,
+
+    pub object_fit: AspectRatio,
+    pub object_position: ImageCover,
+    pub sampling_mode: SamplingMode,
+    pub image_blur: f32,
+    pub snap_to_grid: bool,
+
+    pub variants: Variants,
 }
 
 impl Default for Style {
     fn default() -> Self {
+        let theme = active_theme();
+        let mut style = Self::bare();
+
+        // ---- colors: the two that every element should inherit ----
+        if let Some(fill) = theme.fill("background") {
+            style.background = fill;
+        }
+        if let Some(fill) = theme.fill("foreground") {
+            style.text_color = fill;
+        }
+
+        // ---- typography: base size + sans stack ----
+        if let Some((size, _line_height)) = theme.typography.font_size.get("base") {
+            style.font_size = (*size).into();
+        }
+        if let Some(sans) = theme.typography.font_family.get("sans") {
+            style.font_families = sans
+                .split(',')
+                .map(|f| f.trim())
+                .filter(|f| !f.is_empty())
+                .map(|f| Cow::Owned(f.to_owned()))
+                .collect();
+        }
+
+        style
+    }
+}
+
+impl Style {
+    /// A `Style` with **no** theme influence. Use this in tests, snapshots,
+    /// or any place where ambient thread-local state must not leak in.
+    pub fn bare() -> Self {
         Self {
-            // ---- paint ----
+            // exactly the current `Default` body, verbatim
             background: Fill::default(),
             text_color: black().into(),
             text_align: TextAlign::default(),
-
-            // ---- typography ----
             font_size: FontSize::default(),
             font_weight: FontWeight::default(),
             letter_spacing: LetterSpacing::default(),
@@ -90,35 +132,23 @@ impl Default for Style {
             line_height: f32::default(),
             text_shadows: Vec::default(),
             text_decoration: TextDecoration::default(),
-
-            // ---- interaction ----
             cursor: CursorIcon::default(),
             cursor_visible: true,
-
-            // ---- effects ----
             overflow: Overflow::default(),
             blur: f32::default(),
             rotation: f32::default(),
             opacity: f32::default(),
             scale: Scale { x: 1.0, y: 1.0 },
             transform_origin: TransformOrigin::default(),
-
-            // ---- radius ----
             radius: CornerRadius::default(),
-
-            // ---- layout: dimensions ----
             width: Size::default(),
             height: Size::default(),
             min_width: Size::default(),
             min_height: Size::default(),
             max_width: Size::default(),
             max_height: Size::default(),
-
-            // ---- layout: box model ----
             padding: Gaps::default(),
             margin: Gaps::default(),
-
-            // ---- layout: flow ----
             spacing: Length::default(),
             offset_x: Length::default(),
             offset_y: Length::default(),
@@ -127,6 +157,43 @@ impl Default for Style {
             cross_align: Alignment::default(),
             position: Position::default(),
             content: Content::default(),
+            object_fit: AspectRatio::default(),
+            object_position: ImageCover::default(),
+            sampling_mode: SamplingMode::default(),
+            image_blur: 0.0,
+            snap_to_grid: false,
+            variants: Variants::default(),
         }
+    }
+
+    /// A `Style` seeded from an explicit `Theme`, ignoring thread-local
+    /// state. Useful for tests, previews, and any place where you want
+    /// deterministic theme application.
+    pub fn themed(theme: &crate::theme::Theme) -> Self {
+        let mut style = Self::bare();
+        if let Some(fill) = theme.fill("background") {
+            style.background = fill;
+        }
+        if let Some(fill) = theme.fill("foreground") {
+            style.text_color = fill;
+        }
+        if let Some((size, _)) = theme.typography.font_size.get("base") {
+            style.font_size = (*size).into();
+        }
+        if let Some(sans) = theme.typography.font_family.get("sans") {
+            style.font_families = sans
+                .split(',')
+                .map(|f| f.trim())
+                .filter(|f| !f.is_empty())
+                .map(|f| Cow::Owned(f.to_owned()))
+                .collect();
+        }
+        style
+    }
+}
+
+impl StyledExt for Style {
+    fn get_style(&mut self) -> &mut Style {
+        self
     }
 }

@@ -301,6 +301,10 @@ pub const fn white() -> StyledColor {
 pub const fn black() -> StyledColor {
     StyledColor::rgb(0, 0, 0)
 }
+/// Fully transparent (`rgba(0, 0, 0, 0)`). Tailwind's `transparent`.
+pub const fn transparent() -> StyledColor {
+    StyledColor::rgb(0, 0, 0).opacity(0.0)
+}
 
 // ---- Neutrals ----
 family!(stone;
