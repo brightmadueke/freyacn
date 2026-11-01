@@ -12,7 +12,7 @@ A modern, shadcn/ui-inspired component library for
 [Freya](https://github.com/marc2332/freya), built around a single styling
 trait, a theme system, and a layered variant model.
 
-`freyacn` is the runtime crate: it provides `Style`, `StyleExt`, `Variant`,
+`freyacn` is the runtime crate: it provides `Style`, `StyleExt`, `StyleVariant`,
 the theme, the styled component primitives, and re-exports the
 `#[component]`, `#[variant]`, `#[extensions]`, and `#[struct_fields]`
 macros. It also re-exports Freya's own prelude, so you don't need a direct
@@ -450,7 +450,7 @@ The macro generates:
 Kebab conversion handles simple (`Md` → `md`), acronym (`XS` → `xs`), and
 compound (`SecondaryDestructive` → `secondary-destructive`) names.
 
-The `Variant` trait itself is one method:
+The `StyleVariant` trait itself is one method:
 
 ```rust
 use freyacn::prelude::Style;
@@ -715,7 +715,7 @@ keyed on `src`, and falls back gracefully when the file is missing.
 - **`object-fit` mapping**:
 
   | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
-          |------------|---------------------|--------------------|
+            |------------|---------------------|--------------------|
   | `Fill`     | `None` (stretch)    | `Fill`             |
   | `Cover`    | `Max` (cover, crop) | `Center`           |
   | `Contain`  | `Min` (fit inside)  | `Fill`             |
@@ -1054,7 +1054,7 @@ Each error names the offending item and points at the fix.
 
 | Crate                      | Purpose                                                                                                                                                                                            |
 |----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`freyacn`** (this crate) | Runtime library: `Style`, `StyleExt`, `Variant`, theme, extensions, components. Re-exports all macros and Freya's prelude.                                                                         |
+| **`freyacn`** (this crate) | Runtime library: `Style`, `StyleExt`, `StyleVariant`, theme, extensions, components. Re-exports all macros and Freya's prelude.                                                                    |
 | `freyacn-macros`           | Proc-macros (`#[component]`, `#[variant]`, `#[extensions]`, `#[struct_fields]`). Internal — never depend on it directly.                                                                           |
 | `freyacn-cli`              | Command-line tool for bundling and packaging `freyacn` apps. Its command surface mirrors the Tauri CLI — `dev`, `build`, `bundle`, `icon`, `info`, and friends — so familiar workflows carry over. |
 

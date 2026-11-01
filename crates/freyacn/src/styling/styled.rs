@@ -1,8 +1,8 @@
-use crate::prelude::CursorIcon;
+use crate::base::CursorIcon;
 use crate::styling::colors::{StyledColor, black};
 use crate::styling::style::Style;
+use crate::styling::style_variants::StyleVariant;
 use crate::styling::styled_string::StyledString;
-use crate::styling::variants::Variant;
 use crate::theme::{ComponentState, Theme};
 use freya_core::data::Overflow;
 use freya_core::prelude::{
@@ -6492,7 +6492,9 @@ pub trait StyledExt: Sized {
     where
         F: Fn(Style) -> Style + Send + Sync + 'static,
     {
-        self.get_style().variants.push(Variant::Hover, Arc::new(f));
+        self.get_style()
+            .variants
+            .push(StyleVariant::Hover, Arc::new(f));
         self
     }
 
@@ -6507,7 +6509,9 @@ pub trait StyledExt: Sized {
     where
         F: Fn(Style) -> Style + Send + Sync + 'static,
     {
-        self.get_style().variants.push(Variant::Focus, Arc::new(f));
+        self.get_style()
+            .variants
+            .push(StyleVariant::Focus, Arc::new(f));
         self
     }
 
@@ -6524,7 +6528,7 @@ pub trait StyledExt: Sized {
     {
         self.get_style()
             .variants
-            .push(Variant::FocusVisible, Arc::new(f));
+            .push(StyleVariant::FocusVisible, Arc::new(f));
         self
     }
 
@@ -6541,7 +6545,7 @@ pub trait StyledExt: Sized {
     {
         self.get_style()
             .variants
-            .push(Variant::FocusWithin, Arc::new(f));
+            .push(StyleVariant::FocusWithin, Arc::new(f));
         self
     }
 
@@ -6556,7 +6560,9 @@ pub trait StyledExt: Sized {
     where
         F: Fn(Style) -> Style + Send + Sync + 'static,
     {
-        self.get_style().variants.push(Variant::Active, Arc::new(f));
+        self.get_style()
+            .variants
+            .push(StyleVariant::Active, Arc::new(f));
         self
     }
 
@@ -6573,7 +6579,7 @@ pub trait StyledExt: Sized {
     {
         self.get_style()
             .variants
-            .push(Variant::Disabled, Arc::new(f));
+            .push(StyleVariant::Disabled, Arc::new(f));
         self
     }
 
@@ -6590,7 +6596,7 @@ pub trait StyledExt: Sized {
     {
         self.get_style()
             .variants
-            .push(Variant::Checked, Arc::new(f));
+            .push(StyleVariant::Checked, Arc::new(f));
         self
     }
 
@@ -6607,7 +6613,7 @@ pub trait StyledExt: Sized {
     {
         self.get_style()
             .variants
-            .push(Variant::Selected, Arc::new(f));
+            .push(StyleVariant::Selected, Arc::new(f));
         self
     }
 
@@ -6618,7 +6624,7 @@ pub trait StyledExt: Sized {
 
 pub trait ThemedExt: StyledExt + Sized {
     /// `background` ← `theme.fill(key)`
-    fn bg_token(mut self, theme: &crate::theme::Theme, key: &str) -> Self {
+    fn bg_token(mut self, theme: &Theme, key: &str) -> Self {
         if let Some(fill) = theme.fill(key) {
             self.get_style().background = fill;
         }
@@ -6628,9 +6634,9 @@ pub trait ThemedExt: StyledExt + Sized {
     /// `background` ← state-aware component token
     fn bg_component(
         mut self,
-        theme: &crate::theme::Theme,
+        theme: &Theme,
         path: &str,
-        state: crate::theme::ComponentState,
+        state: ComponentState,
         field: &str,
     ) -> Self {
         if let Some(fill) = theme.state_fill(path, state, field) {
@@ -6640,7 +6646,7 @@ pub trait ThemedExt: StyledExt + Sized {
     }
 
     /// `text_color` ← `theme.fill(key)`
-    fn text_token(mut self, theme: &crate::theme::Theme, key: &str) -> Self {
+    fn text_token(mut self, theme: &Theme, key: &str) -> Self {
         if let Some(fill) = theme.fill(key) {
             self.get_style().text_color = fill;
         }
@@ -6650,9 +6656,9 @@ pub trait ThemedExt: StyledExt + Sized {
     /// `text_color` ← state-aware component token
     fn text_component(
         mut self,
-        theme: &crate::theme::Theme,
+        theme: &Theme,
         path: &str,
-        state: crate::theme::ComponentState,
+        state: ComponentState,
         field: &str,
     ) -> Self {
         if let Some(fill) = theme.state_fill(path, state, field) {
@@ -6661,13 +6667,13 @@ pub trait ThemedExt: StyledExt + Sized {
         self
     }
 
-    fn radius_token(self, theme: &crate::theme::Theme, key: &str) -> Self {
+    fn radius_token(self, theme: &Theme, key: &str) -> Self {
         self.radius(theme.radius(key))
     }
-    fn p_token(self, theme: &crate::theme::Theme, key: &str) -> Self {
+    fn p_token(self, theme: &Theme, key: &str) -> Self {
         self.p(theme.spacing(key))
     }
-    fn gap_token(self, theme: &crate::theme::Theme, key: &str) -> Self {
+    fn gap_token(self, theme: &Theme, key: &str) -> Self {
         self.gap(theme.spacing(key))
     }
 }

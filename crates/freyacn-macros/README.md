@@ -355,7 +355,7 @@ Applied to an enum, generates:
 
 * `impl MyEnum { fn style_str(&self) -> &'static str; }`
 * `impl MyEnum { fn resolve(&self) -> freyacn::prelude::Style; }` —
-  convenience alias that doesn't require importing `Variant`.
+  convenience alias that doesn't require importing `StyleVariant`.
 * `impl freyacn::prelude::Variant for MyEnum` — the trait-based resolver.
 * `impl From<&str> for MyEnum`
 * `impl From<String> for MyEnum`
@@ -410,7 +410,7 @@ let s = v.resolve();
 Div().merge_style(s);
 ```
 
-### The `Variant` trait
+### The `StyleVariant` trait
 
 `#[variant]` generates `impl freyacn::prelude::Variant for MyEnum`. The
 trait is:

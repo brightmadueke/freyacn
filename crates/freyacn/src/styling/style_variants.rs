@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Variant {
+pub enum StyleVariant {
     Hover,
     Focus,
     FocusVisible,
@@ -14,21 +14,21 @@ pub enum Variant {
     Disabled,
 }
 
-impl Variant {
+impl StyleVariant {
     /// Lower numbers are applied first; higher numbers override.
     ///
-    /// This is the *canonical* precedence used by [`Variants::apply_all`],
+    /// This is the *canonical* precedence used by [`StyleVariants::apply_all`],
     /// regardless of the order the caller listed them in.
     pub fn priority(self) -> u8 {
         match self {
-            Variant::Hover => 10,
-            Variant::Focus => 20,
-            Variant::FocusVisible => 30,
-            Variant::FocusWithin => 40,
-            Variant::Selected => 50,
-            Variant::Checked => 60,
-            Variant::Active => 70,
-            Variant::Disabled => 100,
+            StyleVariant::Hover => 10,
+            StyleVariant::Focus => 20,
+            StyleVariant::FocusVisible => 30,
+            StyleVariant::FocusWithin => 40,
+            StyleVariant::Selected => 50,
+            StyleVariant::Checked => 60,
+            StyleVariant::Active => 70,
+            StyleVariant::Disabled => 100,
         }
     }
 }
@@ -40,12 +40,12 @@ impl Variant {
 pub type VariantFn = Arc<dyn Fn(Style) -> Style + Send + Sync>;
 
 #[derive(Clone, Default)]
-pub struct Variants {
-    entries: Vec<(Variant, VariantFn)>,
+pub struct StyleVariants {
+    entries: Vec<(StyleVariant, VariantFn)>,
 }
 
-impl Variants {
-    pub fn push(&mut self, kind: Variant, f: VariantFn) {
+impl StyleVariants {
+    pub fn push(&mut self, kind: StyleVariant, f: VariantFn) {
         self.entries.push((kind, f));
     }
 
@@ -54,7 +54,7 @@ impl Variants {
     }
 
     /// Apply every registered callback for `kind`, in registration order.
-    pub fn apply(&self, kind: Variant, style: Style) -> Style {
+    pub fn apply(&self, kind: StyleVariant, style: Style) -> Style {
         self.entries
             .iter()
             .filter(|(k, _)| *k == kind)
@@ -62,17 +62,17 @@ impl Variants {
     }
 
     /// Apply every kind in `kinds` in **canonical priority order**
-    /// (see [`Variant::priority`]), so a later, higher-priority
+    /// (see [`StyleVariant::priority`]), so a later, higher-priority
     /// variant reliably overrides an earlier one on shared fields.
-    pub fn apply_all(&self, kinds: &[Variant], style: Style) -> Style {
-        let mut sorted: Vec<Variant> = kinds.iter().copied().collect();
+    pub fn apply_all(&self, kinds: &[StyleVariant], style: Style) -> Style {
+        let mut sorted: Vec<StyleVariant> = kinds.iter().copied().collect();
         sorted.sort_by_key(|k| k.priority());
         sorted.dedup();
         sorted.into_iter().fold(style, |s, k| self.apply(k, s))
     }
 }
 
-impl fmt::Debug for Variants {
+impl fmt::Debug for StyleVariants {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.entries.iter().map(|(k, _)| k))
@@ -92,7 +92,7 @@ impl fmt::Debug for Variants {
 /// in signals and rely on `PartialEq` to detect closure changes, this
 /// will silently miss them. In that case, drop `PartialEq` from `Style`
 /// entirely and rebuild from props instead of comparing styles.
-impl PartialEq for Variants {
+impl PartialEq for StyleVariants {
     fn eq(&self, other: &Self) -> bool {
         self.entries.len() == other.entries.len()
             && self

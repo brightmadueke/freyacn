@@ -1,6 +1,6 @@
 use crate::styling::colors::black;
+use crate::styling::style_variants::StyleVariants;
 use crate::styling::styled::StyledExt;
-use crate::styling::variants::Variants;
 use crate::theme::active_theme;
 use freya_core::data::Overflow;
 use freya_core::prelude::{
@@ -79,7 +79,7 @@ pub struct Style {
     pub image_blur: f32,
     pub snap_to_grid: bool,
 
-    pub variants: Variants,
+    pub variants: StyleVariants,
 }
 
 impl Default for Style {
@@ -162,7 +162,7 @@ impl Style {
             sampling_mode: SamplingMode::default(),
             image_blur: 0.0,
             snap_to_grid: false,
-            variants: Variants::default(),
+            variants: StyleVariants::default(),
         }
     }
 
