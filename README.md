@@ -690,7 +690,7 @@ pub fn resolve_fill(
 
 ```toml
 [dependencies]
-freyacn = "0.3.0"
+freyacn = "0.2.1"
 ```
 
 > The crates.io release may lag behind `git`. Because the API is pre-release,
