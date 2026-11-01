@@ -1,5 +1,3 @@
-# FreyaCN
-
 > ⚠️ **Work in progress.** FreyaCN is under active development and its public
 > API is **not yet stable**. Breaking changes may land in any release.
 >

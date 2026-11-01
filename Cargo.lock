@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "freyacn"
-version = "0.2.1-alpha.1"
+version = "0.2.1"
 dependencies = [
  "euclid",
  "freya",
@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "freyacn_cli"
-version = "0.2.1-alpha.1"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "freyacn_macros"
-version = "0.2.1-alpha.1"
+version = "0.2.1"
 dependencies = [
  "proc-macro2",
  "quote",

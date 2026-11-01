@@ -1,5 +1,3 @@
-//! # FreyaCN
-//!
 //! Styling and theming for [Freya](https://github.com/marc2332/freya) UIs.
 //!
 //! FreyaCN is built on two ideas:
