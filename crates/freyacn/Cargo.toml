@@ -2,7 +2,7 @@
 name = "freyacn"
 version.workspace = true
 edition.workspace = true
-description = "A Freya component library with Tailwind‑inspired extension traits for building beautiful, theme‑aware UIs."
+description = "A Freya component library with Tailwind‑inspired Fluent builder methods for building beautiful, theme‑aware UIs."
 license.workspace = true
 readme.workspace = true
 authors.workspace = true
