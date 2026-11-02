@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "login": "brightmadueke",
+  "kind": "user",
+  "seed": "391fa739169a92d2",
+  "planted": "2024-11-28",
+  "last_grown": "2026-11-01",
+  "trunk": {
+    "height": 11,
+    "girth": 2,
+    "bends": [
+      [
+        0,
+        0
+      ],
+      [
+        5,
+        1
+      ]
+    ]
+  },
+  "branches": [
+    {
+      "repo_id": "R_kgDOTBAowA",
+      "name": "trawl-mail",
+      "lang": "TypeScript",
+      "color": "#3178c6",
+      "anchor": 3,
+      "side": "left",
+      "length": 3,
+      "pad": 3,
+      "commits_total": 23,
+      "pruned": null
+    },
+    {
+      "repo_id": "R_kgDOVBb4AA",
+      "name": "freyacn",
+      "lang": "Rust",
+      "color": "#dea584",
+      "anchor": 7,
+      "side": "right",
+      "length": 4,
+      "pad": 3,
+      "commits_total": 31,
+      "pruned": null
+    }
+  ],
+  "year_cache": {
+    "2024": {},
+    "2025": {}
+  },
+  "history": [
+    {
+      "date": "2026-06-20",
+      "cells_added": 1
+    },
+    {
+      "date": "2026-06-21",
+      "cells_added": 2
+    },
+    {
+      "date": "2026-06-22",
+      "cells_added": 2
+    },
+    {
+      "date": "2026-06-23",
+      "cells_added": 1
+    },
+    {
+      "date": "2026-11-01",
+      "cells_added": 1
+    }
+  ],
+  "vitals": {
+    "phase": "growing",
+    "streak_days": 1,
+    "idle_days": 0,
+    "commits_total": 55,
+    "stars_total": 1,
+    "public_repos": 4,
+    "activity_28d": {
+      "R_kgDOTBAowA": 0,
+      "R_kgDOVBb4AA": 31
+    },
+    "grew": {
+      "R_kgDOVBb4AA": 1
+    }
+  }
+}
