@@ -19,7 +19,7 @@ use torin::prelude::{Alignment, Direction, Gaps, Length, Position, Size};
 ///
 /// Every method consumes and returns `Self`, so calls can be chained:
 ///
-/// ```ignore
+/// ```
 /// text("Hello")
 ///     .text_color(neutral_900())
 ///     .text_lg()
@@ -306,7 +306,7 @@ pub trait StyledExt: Sized {
     /// spacing scales automatically with [`font_size`](Self::font_size).
     /// Call this **after** the font-size setter to get the expected result:
     ///
-    /// ```ignore
+    /// ```
     /// text("Hi").text_lg().tracking(0.05) // 18px * 0.05 = 0.9px
     /// ```
     ///
@@ -6519,7 +6519,7 @@ pub trait StyledExt: Sized {
     // a default border if none exists yet, so the order in the chain
     // doesn't matter:
     //
-    // ```ignore
+    // ```
     // div().border_2().border_color(gray_200())
     // // same result as
     // div().border_color(gray_200()).border_2()
@@ -6696,7 +6696,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// text("Hi").bg(neutral_100()).hover(|s| s.bg(neutral_200()))
     /// ```
     fn hover<F>(mut self, f: F) -> Self
@@ -6713,7 +6713,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// input().focus(|s| s.bg(white()))
     /// ```
     fn focus<F>(mut self, f: F) -> Self
@@ -6730,7 +6730,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// button().focus_visible(|s| s.opacity(0.9))
     /// ```
     fn focus_visible<F>(mut self, f: F) -> Self
@@ -6747,7 +6747,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// card().focus_within(|s| s.bg(neutral_50()))
     /// ```
     fn focus_within<F>(mut self, f: F) -> Self
@@ -6764,7 +6764,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// button().active(|s| s.scale_95())
     /// ```
     fn active<F>(mut self, f: F) -> Self
@@ -6781,7 +6781,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// button().disabled(|s| s.opacity_50().cursor_not_allowed())
     /// ```
     fn disabled<F>(mut self, f: F) -> Self
@@ -6798,7 +6798,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// checkbox().checked(|s| s.bg(neutral_900()))
     /// ```
     fn checked<F>(mut self, f: F) -> Self
@@ -6815,7 +6815,7 @@ pub trait StyledExt: Sized {
     ///
     /// The closure receives the base [`Style`] and returns the patched one.
     ///
-    /// ```ignore
+    /// ```
     /// item().selected(|s| s.bg(neutral_100()))
     /// ```
     fn selected<F>(mut self, f: F) -> Self

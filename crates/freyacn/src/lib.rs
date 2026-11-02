@@ -1,3 +1,6 @@
+//! > ⚠️ **Pre-release.** The public API is not yet stable. Breaking
+//! > changes may land in any `0.x` release.
+//!
 //! Styling and theming for [Freya](https://github.com/marc2332/freya) UIs.
 //!
 //! FreyaCN gives Freya a small design system: a JSON-driven theme, a
@@ -135,10 +138,12 @@
 //!
 //! [`ThemeRegistry`] supports:
 //!
-//! - Loading from a JSON string ([`ThemeRegistry::from_json`]).
-//! - Loading from a directory of `*.json` files ([`ThemeRegistry::from_dir`]).
-//! - Programmatic registration ([`ThemeRegistry::insert`]).
-//! - Hot reload by re-reading the directory ([`ThemeRegistry::reload`]).
+//! - Loading from a JSON string via [`ThemeRegistry::load`].
+//! - Loading from a directory of `*.json` files via [`ThemeRegistry::load_dir`].
+//! - Hot reload by re-reading the directory via [`ThemeRegistry::reload_dir`].
+//! - Lookup by id via [`ThemeRegistry::get`], active-theme selection via
+//!   [`ThemeRegistry::set_active`], and enumeration via
+//!   [`ThemeRegistry::list`] / [`ThemeRegistry::ids`].
 //!
 //! ## Reactivity
 //!
@@ -511,10 +516,20 @@
 //! [`StyleVariant`]: crate::styling::StyleVariant
 //! [`StyleVariants`]: crate::styling::StyleVariants
 //! [`HasSemanticEvents`]: crate::styling::HasSemanticEvents
-//! [`Fill`]: freya_core::prelude::Fill
 //! [`elements`]: crate::elements
 //! [`styling`]: crate::styling
 //! [`theme`]: crate::theme
+//! [`Fill`]: freya_core::prelude::Fill
+//!
+//! [`ThemeRegistry::load`]: crate::theme::ThemeRegistry::load
+//! [`ThemeRegistry::load_dir`]: crate::theme::ThemeRegistry::load_dir
+//! [`ThemeRegistry::reload_dir`]: crate::theme::ThemeRegistry::reload_dir
+//! [`ThemeRegistry::get`]: crate::theme::ThemeRegistry::get
+//! [`ThemeRegistry::set_active`]: crate::theme::ThemeRegistry::set_active
+//! [`ThemeRegistry::list`]: crate::theme::ThemeRegistry::list
+//! [`ThemeRegistry::ids`]: crate::theme::ThemeRegistry::ids
+//! [`use_init_theme_registry`]: crate::theme::use_init_theme_registry
+//! [`StyleVariant::priority`]: crate::styling::StyleVariant::priority
 
 extern crate self as freyacn;
 
@@ -523,6 +538,7 @@ pub mod elements;
 pub mod styling;
 pub mod theme;
 pub mod utils;
+mod variants;
 
 /// Everything you need to build a FreyaCN UI.
 ///

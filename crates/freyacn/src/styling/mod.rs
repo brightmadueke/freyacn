@@ -130,7 +130,7 @@
 //! ## Writing a new element
 //!
 //! Elements follow a consistent 5-step recipe. This is the shape every
-//! element in [`crate::elements`](crate::elements) follows:
+//! element in [`crate::elements`] follows:
 //!
 //! ```
 //! use crate::styling::apply::apply_to_rect;
@@ -247,7 +247,7 @@
 //! built-in element set, that's `div()`, `button()`, `checkbox()`,
 //! `radio()`, `input()`, and `image()`. `text()` and `p()` ignore
 //! borders — wrap in a `div()` to outline text content. See the
-//! [`crate::elements`](crate::elements) module docs for the full matrix.
+//! [`crate::elements`] module docs for the full matrix.
 //!
 //! # The one invariant
 //!

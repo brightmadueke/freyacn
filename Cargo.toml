@@ -3,16 +3,15 @@ resolver = "3"
 members = ["crates/freyacn", "crates/freyacn-macros", "crates/freyacn-cli", "crates/freyacn-shadcn", "crates/freyacn-mmaterial3"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/brightmadueke/freyacn"
 authors = ["Bright Madueke <maduekebright399@gmail.com>"]
-homepage = "https://github.com/brightmadueke/freyacn"
 documentation = "https://docs.rs/freyacn"
 readme = "README.md"
 keywords = ["freya", "ui", "components", "shadcn", "tailwind"]
 categories = ["gui", "development-tools"]
 
 [workspace.dependencies]
-freyacn_macros = { version = "0.2.1", path = "crates/freyacn-macros" }
+freyacn_macros = { version = "0.2.2", path = "crates/freyacn-macros" }

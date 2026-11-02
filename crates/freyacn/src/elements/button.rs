@@ -70,7 +70,7 @@ impl Button {
     /// Renamed from `selected` so `StyledExt::selected(..)` remains
     /// callable for styling the `:selected` variant:
     ///
-    /// ```ignore
+    /// ```
     /// button()
     ///     .with_selected(true)                                // state
     ///     .selected(|s| s.background(blue_600().into()))      // variant

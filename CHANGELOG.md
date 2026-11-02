@@ -5,284 +5,149 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+> **Pre-release.** Until `1.0.0`, minor-version bumps may include breaking
+> changes. Pin to a specific version or commit if you depend on this crate.
 
-## [1.1.2] - 2024-09-27
+## [0.2.2] - 2026-11-02
 
 ### Added
 
-- v1.1 German translation.
-- v1.1 Italian translation.
-- v1.1 Simplified Chinese translation.
-- v1.1 Persian translation.
-- v1.1 Polish translation.
-- v1.1 Slovenian translation.
-- v1.1 Traditional Chinese translation.
-- v1.1 Spanish translation.
-- v1.1 Brazilian Portuguese translation.
-- v1.1 Czech translation.
-- v1.1 Romanian translation.
-- v1.1 Swedish translation.
-- v1.1 Ukrainian translation.
-- v1.1 Korean translation.
-- v1.1 Indonesian translation.
+#### Elements
+
+- `input(...)` — new HTML `<input type="text">`-like element. Controlled via
+  `.value(String)` / `.on_change(handler)`. Supports `.placeholder(...)`,
+  `.mode(InputMode::Text | Password(char))`, `.max_length(n)`,
+  `.auto_focus(bool)`, `.with_disabled(bool)`, `.with_read_only(bool)`, and
+  `.on_submit(handler)` for Enter.
+    - Password mode masks the display and the accessibility label — the raw
+      password never flows through `a11y_alt`, and `AccessibilityRole` becomes
+      `PasswordInput`.
+    - Text selection: click-drag, shift+arrow, Ctrl+A. Password mode opts out (mask length may differ from value length
+      in UTF-16).
+    - Clipboard: Ctrl+C / Ctrl+V / Ctrl+X with `max_length` respect.
+    - IME preedit rendered inline with an underline, positioned correctly at
+      the cursor even mid-string.
+    - Horizontal scrolling via `ScrollView` with a `follow_cursor` side effect
+      so the cursor is always visible.
+- `checkbox()` — new HTML `<input type="checkbox">`-like element. Controlled
+  via `.with_checked(bool)`; activation via `.on_checked(...)` /
+  `.on_unchecked(...)`. Custom icon via `.icon(..)`, custom icon color via
+  `.check_color(..)`, box size via `.size(f32)`. `:checked` variant swaps
+  `gray_100` → `blue_600` fill and shows a white lucide `check`.
+- `radio()` — new HTML `<input type="radio">`-like element. Controlled via
+  `.with_checked(bool)`; activation via `.on_checked(...)` only (HTML
+  semantics: clicking a checked radio is a no-op). Custom dot color via
+  `.dot_color(..)`, size via `.size(f32)`.
+- `p(...)` — new HTML `<p>`-like paragraph wrapper. Ordered `.span(..)` /
+  `.child(..)` content, `.max_lines(n)`, `.line_height(h)`, and HTML `<p>`
+  UA defaults (`1em` top/bottom margin, `16px` at default font size).
+
+#### Styling
+
+- `Style::border: Option<Border>` — borders are now a first-class style
+  property. Renders on `div`, `button`, `checkbox`, `radio`, `input`, and
+  `image` (via `DecorationExt`); `text` and `p` ignore it (their primitives
+  don't implement `DecorationExt`). Not inherited — matches CSS.
+- Border utilities on `StyledExt`: `.border(..)`, `.border_none()`,
+  `.border_0/1/2/4/8()`, `.border_t/r/b/l(..)`, `.border_x/y(..)`,
+  `.border_width(..)`, `.border_color(..)`, `.border_inner/outer/center()`,
+  `.border_alignment(..)`.
+- `Style::merge_style(other)` — merge `other` into `self` with `other` taking
+  precedence for fields that differ from `Style::bare()`'s default.
+- `Style::inheritable_subset()` — the CSS-`inherit`-able slice of a `Style`:
+  `text_color`, `text_align`, `font_*`, `text_*`, `letter_spacing`,
+  `line_height`, `text_shadows`, `text_decoration`, `cursor`,
+  `cursor_visible`. Everything else stays local to the element that set it.
+- `InheritedStyle` newtype — context payload carrying the inherited slice.
+- `styling::apply` — shared `Style` → primitive helpers: `apply_to_rect`,
+  `apply_text_style`, `HasFontLists`, `apply_font_lists`.
+- `styling::semantic_events` — shared semantic-event layer:
+    - `SemanticEvents` — the eight universal pointer/focus callbacks.
+    - `HasSemanticEvents` — fluent `.on_hover(..)` / `.on_pressed(..)` /
+      `.on_focus(..)` / etc. setters, implemented on every interactive element.
+    - `attach_pointer_handlers` — wires the four pointer events that drive
+      `:hover` / `:active` and fire the semantic callbacks.
+    - `use_semantic_focus_events` — custom hook that fires `.on_focus(..)` /
+      `.on_blur(..)` / `.on_focus_visible(..)` exactly once per transition.
+- `Div::with_semantic_events(..)` — replace the div's semantic-events bundle
+  wholesale, useful when wrapping a `Div` inside another element.
+- `Div::with_focusable(bool)` — force the focusability flag, overriding the
+  default derivation. Removes the phantom `:focus` variant hack that every
+  focusable element previously carried.
+- `Div::scroll_y()` / `.scroll_x()` / `.with_scroll_controller(..)` /
+  `.show_scrollbar(bool)` / `.hide_scrollbar()` — wrap children in a
+  `ScrollView` while keeping the outer `rect()` (and all its styling)
+  intact. Non-scrolling `div()`s behave identically to before.
+
+#### Documentation
+
+- Extensive module docs on `lib.rs`, `styling/mod.rs`, and `elements/mod.rs`:
+  style-cascade diagram, variant precedence, disabled gate, semantic-event
+  reference, border support matrix, scrolling reference, Tailwind-to-FreyaCN
+  translation cheatsheet, FAQ, non-goals, and per-element known limitations.
+- 5-step recipe for writing new elements, wired to `apply_to_rect` /
+  `attach_pointer_handlers` / `use_semantic_focus_events`.
+- README rewritten to reflect the current API surface, marked as
+  pre-release, and updated to target Freya `0.5.0-rc.13`.
+
+### Changed
+
+- **Element constructors default to `Style::bare()` instead of
+  `Style::default()`.** The theme is applied once, at the top of the tree,
+  then inherited down through `InheritedStyle` context. Element-level
+  `.style(..)` overrides now merge on top of the inherited slice — not on
+  top of a theme-seeded `Style`.
+- `Style::merge_style` uses a "differs from `Style::bare()`" test — a field
+  whose value equals its bare default cannot be reset by a later merge. Every
+  element with UA defaults exposes `.no_default_style()` as the escape hatch.
+- `button()` — rewritten on top of `Div` with full semantic-event support.
+  New `.on_selected(..)` / `.on_deselected(..)` activation callbacks. Focus
+  is requested on click when focusable, matching `<button>`.
+- `div()`, `text()`, `image()` — now consume `InheritedStyle` from the
+  nearest ancestor and provide their own resolved style to descendants.
+- `Style::default()` is no longer the recommended starting point for element
+  styles. Use `Style::bare()` (the new element default) or let the element
+  layer the theme itself.
 
 ### Fixed
 
-- Improve French translation.
-- Improve Dutch translation.
-
-## [1.1.1] - 2023-03-05
-
-### Added
-
-- v1.1 Arabic translation.
-- v1.1 French translation.
-- v1.1 Dutch translation.
-- v1.1 Russian translation.
-- v1.1 Japanese translation.
-- v1.1 Norwegian Bokmål translation.
-- v1.1 "Inconsistent Changes" Turkish translation.
-- Default to most recent versions available for each languages.
-- Display count of available translations (26 to date!).
-- Centralize all links into `/data/links.json` so they can be updated easily.
-
-### Fixed
-
-- Improve French translation.
-- Improve id-ID translation.
-- Improve Persian translation.
-- Improve Russian translation.
-- Improve Swedish title.
-- Improve zh-CN translation.
-- Improve French translation.
-- Improve zh-TW translation.
-- Improve Spanish (es-ES) transltion.
-- Foldout menu in Dutch translation.
-- Missing periods at the end of each change.
-- Fix missing logo in 1.1 pages.
-- Display notice when translation isn't for most recent version.
-- Various broken links, page versions, and indentations.
-
-### Changed
-
-- Upgrade dependencies: Ruby 3.2.1, Middleman, etc.
-
-### Removed
-
-- Unused normalize.css file.
-- Identical links assigned in each translation file.
-- Duplicate index file for the english version.
-
-## [1.1.0] - 2019-02-15
-
-### Added
-
-- Danish translation.
-- Georgian translation from.
-- Changelog inconsistency section in Bad Practices.
-
-### Fixed
-
-- Italian translation.
-- Indonesian translation.
-
-## [1.0.0] - 2017-06-20
-
-### Added
-
-- New visual identity by [@tylerfortune8].
-- Version navigation.
-- Links to latest released version in previous versions.
-- "Why keep a changelog?" section.
-- "Who needs a changelog?" section.
-- "How do I make a changelog?" section.
-- "Frequently Asked Questions" section.
-- New "Guiding Principles" sub-section to "How do I make a changelog?".
-- Simplified and Traditional Chinese translations from [@tianshuo].
-- German translation from [@mpbzh] & [@Art4].
-- Italian translation from [@azkidenz].
-- Swedish translation from [@magol].
-- Turkish translation from [@emreerkan].
-- French translation from [@zapashcanon].
-- Brazilian Portuguese translation from [@Webysther].
-- Polish translation from [@amielucha] & [@m-aciek].
-- Russian translation from [@aishek].
-- Czech translation from [@h4vry].
-- Slovak translation from [@jkostolansky].
-- Korean translation from [@pierceh89].
-- Croatian translation from [@porx].
-- Persian translation from [@Hameds].
-- Ukrainian translation from [@osadchyi-s].
-
-### Changed
-
-- Start using "changelog" over "change log" since it's the common usage.
-- Start versioning based on the current English version at 0.3.0 to help
-  translation authors keep things up-to-date.
-- Rewrite "What makes unicorns cry?" section.
-- Rewrite "Ignoring Deprecations" sub-section to clarify the ideal
-  scenario.
-- Improve "Commit log diffs" sub-section to further argument against
-  them.
-- Merge "Why can’t people just use a git log diff?" with "Commit log
-  diffs".
-- Fix typos in Simplified Chinese and Traditional Chinese translations.
-- Fix typos in Brazilian Portuguese translation.
-- Fix typos in Turkish translation.
-- Fix typos in Czech translation.
-- Fix typos in Swedish translation.
-- Improve phrasing in French translation.
-- Fix phrasing and spelling in German translation.
-
-### Removed
-
-- Section about "changelog" vs "CHANGELOG".
-
-## [0.3.0] - 2015-12-03
-
-### Added
-
-- RU translation from [@aishek].
-- pt-BR translation from [@tallesl].
-- es-ES translation from [@ZeliosAriex].
-
-## [0.2.0] - 2015-10-06
-
-### Changed
-
-- Remove exclusionary mentions of "open source" since this project can
-  benefit both "open" and "closed" source projects equally.
-
-## [0.1.0] - 2015-10-06
-
-### Added
-
-- Answer "Should you ever rewrite a change log?".
-
-### Changed
-
-- Improve argument against commit logs.
-- Start following [SemVer] properly.
-
-## [0.0.8] - 2015-02-17
-
-### Changed
-
-- Update year to match in every README example.
-- Reluctantly stop making fun of Brits only, since most of the world
-  writes dates in a strange way.
-
-### Fixed
-
-- Fix typos in recent README changes.
-- Update outdated unreleased diff link.
-
-## [0.0.7] - 2015-02-16
-
-### Added
-
-- Link, and make it obvious that date format is ISO 8601.
-
-### Changed
-
-- Clarified the section on "Is there a standard change log format?".
-
-### Fixed
-
-- Fix Markdown links to tag comparison URL with footnote-style links.
-
-## [0.0.6] - 2014-12-12
-
-### Added
-
-- README section on "yanked" releases.
-
-## [0.0.5] - 2014-08-09
-
-### Added
-
-- Markdown links to version tags on release headings.
-- Unreleased section to gather unreleased changes and encourage note
-  keeping prior to releases.
-
-## [0.0.4] - 2014-08-09
-
-### Added
-
-- Better explanation of the difference between the file ("CHANGELOG")
-  and its function "the change log".
-
-### Changed
-
-- Refer to a "change log" instead of a "CHANGELOG" throughout the site
-  to differentiate between the file and the purpose of the file — the
-  logging of changes.
-
-### Removed
-
-- Remove empty sections from CHANGELOG, they occupy too much space and
-  create too much noise in the file. People will have to assume that the
-  missing sections were intentionally left out because they contained no
-  notable changes.
-
-## [0.0.3] - 2014-08-09
-
-### Added
-
-- "Why should I care?" section mentioning The Changelog podcast.
-
-## [0.0.2] - 2014-07-10
-
-### Added
-
-- Explanation of the recommended reverse chronological release ordering.
-
-## [0.0.1] - 2014-05-31
-
-### Added
-
-- This CHANGELOG file to hopefully serve as an evolving example of a
-  standardized open source project CHANGELOG.
-- CNAME file to enable GitHub Pages custom domain.
-- README now contains answers to common questions about CHANGELOGs.
-- Good examples and basic guidelines, including proper date formatting.
-- Counter-examples: "What makes unicorns cry?".
-
-[unreleased]: https://github.com/olivierlacan/keep-a-changelog/compare/v1.1.2...HEAD
-[1.1.2]: https://github.com/olivierlacan/keep-a-changelog/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/olivierlacan/keep-a-changelog/compare/v1.1.0...v1.1.1
-[1.1.0]: https://github.com/olivierlacan/keep-a-changelog/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.3.0...v1.0.0
-[0.3.0]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.8...v0.1.0
-[0.0.8]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.7...v0.0.8
-[0.0.7]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.6...v0.0.7
-[0.0.6]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.5...v0.0.6
-[0.0.5]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.4...v0.0.5
-[0.0.4]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.3...v0.0.4
-[0.0.3]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.2...v0.0.3
-[0.0.2]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/olivierlacan/keep-a-changelog/releases/tag/v0.0.1
-[SemVer]: https://semver.org
-[@tylerfortune8]: https://github.com/tylerfortune8
-[@tianshuo]: https://github.com/tianshuo
-[@mpbzh]: https://github.com/mpbzh
-[@Art4]: https://github.com/Art4
-[@azkidenz]: https://github.com/azkidenz
-[@magol]: https://github.com/magol
-[@emreerkan]: https://github.com/emreerkan
-[@zapashcanon]: https://github.com/zapashcanon
-[@Webysther]: https://github.com/Webysther
-[@amielucha]: https://github.com/amielucha
-[@m-aciek]: https://github.com/m-aciek
-[@aishek]: https://github.com/aishek
-[@h4vry]: https://github.com/h4vry
-[@jkostolansky]: https://github.com/jkostolansky
-[@pierceh89]: https://github.com/pierceh89
-[@porx]: https://github.com/porx
-[@Hameds]: https://github.com/Hameds
-[@osadchyi-s]: https://github.com/osadchyi-s
-[@tallesl]: https://github.com/tallesl
-[@ZeliosAriex]: https://github.com/ZeliosAriex
+- `input()` password mode uses `AccessibilityRole::PasswordInput` and masks
+  the `a11y_alt` value so the real password never flows through the
+  accessibility tree. Previously it declared `TextInput` and passed the raw
+  value through `a11y_alt` — a real a11y leak.
+- `checkbox()` / `radio()` now expose their checked state to assistive
+  technology via `node.set_description(..)` (`"checked"` / `"unchecked"`,
+  `"selected"` / `"not selected"`). This is a workaround for
+  `accesskit::Toggled` not being reachable in the current dependency tree —
+  the description supplements the label rather than replacing it, so custom
+  labels set via `.a11y_alt(..)` survive.
+- `div()` focusable elements now request focus on click when
+  `.with_focusable(true)` or a `:focus`-family variant is present — matching
+  `<div tabindex="0">`.
+
+### Breaking
+
+- `Button::selected(bool)` renamed to `Button::with_selected(bool)` so
+  `StyledExt::selected(..)` remains callable for styling the `:selected`
+  variant. Without the rename, `.selected(|s| ..)` resolved to the inherent
+  setter and failed to typecheck.
+- `Checkbox::checked(bool)` renamed to `Checkbox::with_checked(bool)`.
+  `Radio::checked(bool)` renamed to `Radio::with_checked(bool)`. Same reason.
+- `freya::icons::lucide::{image, radio, timer, *}` in the prelude replaced
+  with `pub use freya::icons::lucide;` (module only, not its contents). The
+  glob brought 1400+ icons into scope, and `image` / `radio` now conflict
+  with the element constructors. Call `lucide::image()`, `lucide::radio()`,
+  `lucide::timer()` explicitly.
+- `Style::default()` is no longer the recommended base for element styles.
+  Existing code that read `.style.text_color` / `.style.font_size` from an
+  element before render will now see bare defaults (black, default size)
+  instead of theme-resolved values.
+
+## [0.2.1] - 2026-11-01
+
+See the [`v0.2.1`](https://github.com/brightmadueke/freyacn/releases/tag/v0.2.1)
+tag on GitHub for the change set.
+
+[unreleased]: https://github.com/brightmadueke/freyacn/compare/v0.2.1...HEAD
+[0.2.2]: https://github.com/brightmadueke/freyacn/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/brightmadueke/freyacn/releases/tag/v0.2.1

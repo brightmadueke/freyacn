@@ -686,7 +686,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let new_doc = format!(
         "Create a new [`{struct_ident}`] with every prop in its initial state.\n\n\
          Chain setters to configure props:\n\n\
-         ```ignore\n\
+         ```\n\
          {struct_ident}::new().prop1(value1).prop2(value2)\n\
          ```"
     );
@@ -694,7 +694,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let ctor_doc = format!(
         "Construct a new [`{struct_ident}`].\n\n\
          Equivalent to [`{struct_ident}::new`]. Chain setters to configure props:\n\n\
-         ```ignore\n\
+         ```\n\
          {fn_ident}().prop1(value1).prop2(value2)\n\
          ```"
     );
@@ -711,7 +711,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
 
     let macro_doc = format!(
         "Sugar macro for constructing [`{struct_ident}`].\n\n\
-         ```ignore\n\
+         ```\n\
          {fn_ident}!(prop1 = value1, prop2 = value2)\n\
          ```"
     );

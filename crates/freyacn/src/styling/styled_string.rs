@@ -1,6 +1,6 @@
 //! Inline Tailwind-style class strings for [`StyledExt`].
 //!
-//! ```ignore
+//! ```
 //! text("Hello")
 //!     .style("p-4 w-1/2 text-lg font-semibold text-blue-500/80 hover:bg-blue-100 -mt-2")
 //! ```

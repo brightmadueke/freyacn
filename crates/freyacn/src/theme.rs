@@ -857,6 +857,33 @@ impl ThemeRegistry {
     pub fn ids(&self) -> Vec<String> {
         self.themes.read().unwrap().keys().cloned().collect()
     }
+
+    pub fn from_json(json: &str) -> Result<Theme, ThemeError> {
+        Theme::from_json_str(json)
+    }
+
+    pub fn from_dir(dir: &std::path::Path) -> Result<Self, ThemeError> {
+        let registry = Self::new();
+        registry.load_dir(dir)?;
+        Ok(registry)
+    }
+
+    pub fn insert(&self, theme: Theme) -> Arc<Theme> {
+        let arc = Arc::new(theme);
+        self.themes
+            .write()
+            .unwrap()
+            .insert(arc.id.clone(), arc.clone());
+        let mut active = self.active_id.write().unwrap();
+        if active.is_none() {
+            *active = Some(arc.id.clone());
+        }
+        arc
+    }
+
+    pub fn reload(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+        self.reload_dir(dir)
+    }
 }
 
 // ---------------------------------------------------------------------

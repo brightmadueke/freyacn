@@ -5,7 +5,7 @@
 //! `ShaderFill`, or `RenderCallback`) and adds a global `.opacity(..)`
 //! multiplier that is applied to solid colors on conversion.
 //!
-//! ```ignore
+//! ```
 //! // Solid color, fully opaque
 //! let a: Fill = blue_500().into();
 //!

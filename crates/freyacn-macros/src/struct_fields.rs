@@ -7,7 +7,7 @@ pub fn stub() -> TokenStream2 {
         proc_macro2::Span::call_site(),
         "`#[struct_fields(...)]` must be placed **below** `#[component(...)]`:\n\
          \n\
-         ```ignore\n\
+         ```\n\
          #[component(props(name: String))]\n\
          #[struct_fields(tooltip: MyTooltip)]\n\
          fn Card(name: String) { … }\n\

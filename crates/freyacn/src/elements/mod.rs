@@ -3,13 +3,13 @@
 //! | Element | Constructor | HTML analogue |
 //! |---|---|---|
 //! | [`Div`] | [`div()`] | `<div>` |
-//! | [`Text`] | [`text(...)`] | `<span>` (leaf text) |
-//! | [`Paragraph`] | [`p(...)`] | `<p>` |
-//! | [`Image`] | [`image(...)`] | `<img>` |
+//! | [`Text`] | [`text(...)`](text()) | `<span>` (leaf text) |
+//! | [`Paragraph`] | [`p(...)`](p()) | `<p>` |
+//! | [`Image`] | [`image(...)`](image()) | `<img>` |
 //! | [`Button`] | [`button()`] | `<button>` |
 //! | [`Checkbox`] | [`checkbox()`] | `<input type="checkbox">` |
 //! | [`Radio`] | [`radio()`] | `<input type="radio">` |
-//! | [`Input`] | [`input(...)`] | `<input type="text">` |
+//! | [`Input`] | [`input(...)`](input()) | `<input type="text">` |
 //!
 //! Every element in this module follows the same conventions, so once you
 //! know one you know them all.
@@ -43,9 +43,9 @@
 //!
 //! ## Border support
 //!
-//! [`Style`](crate::styling::Style) now has an `Option<Border>` field, so
-//! borders are a first-class style property. Support depends on the
-//! primitive the element renders:
+//! [`Style`](crate::styling::Style) has an `Option<Border>` field, so borders
+//! are a first-class style property. Support depends on the primitive the
+//! element renders:
 //!
 //! | Element | Supports `.border_*()` | Renderer |
 //! |---|---|---|
@@ -54,33 +54,55 @@
 //! | `checkbox()` | ✓ | built on `div()` |
 //! | `radio()` | ✓ | built on `div()` |
 //! | `input(...)` | ✓ | built on `div()` |
-//! | `image(...)` | ✓ | local `apply_style` (applies `Border` via `DecorationExt`) |
+//! | `image(...)` | ✓ | local `apply_style` |
 //! | `text(...)` | ✗ | `Label` has no `DecorationExt` |
 //! | `p(...)` | ✗ | `Paragraph` has no `DecorationExt` |
 //!
 //! For `text()` and `p()`, wrap in a `div()` — the `div` owns the border,
 //! the text lives inside:
 //!
-//! ```ignore
+//! ```
 //! div()
 //!     .border_1()
 //!     .border_color(gray_200())
 //!     .child(text("Hello"))
 //! ```
 //!
-//! This matches HTML: text nodes can't be bordered, only the boxes that
-//! contain them.
+//! Border does **not** inherit. Available Tailwind-style utilities:
+//! `.border_1()` / `_2()` / `_4()` / `_8()` / `_0()`, `.border_t(..)` /
+//! `_r` / `_b` / `_l` for per-side, `.border_x(..)` / `_y(..)` for opposite
+//! pairs, `.border_color(..)`, plus freya-specific `.border_inner()` /
+//! `_outer()` / `_center()` for `BorderAlignment`.
 //!
-//! Border does **not** inherit. A child `div()` inside a bordered parent
-//! starts with `border: None` — set borders on the element that should
-//! paint the outline.
+//! ## Scrolling
 //!
-//! Available Tailwind-style utilities: `.border_1()` / `_2()` / `_4()` /
-//! `_8()` / `_0()`, `.border_t(..)` / `_r` / `_b` / `_l` for per-side,
-//! `.border_x(..)` / `_y(..)` for opposite pairs, `.border_color(..)`,
-//! plus freya-specific `.border_inner()` / `_outer()` / `_center()` for
-//! [`BorderAlignment`](freya::prelude::BorderAlignment). See
-//! [`StyledExt`](crate::styling::StyledExt) for the full set.
+//! Freya's `Overflow` enum only has `None` and `Clip` — no `Scroll`. To fill
+//! that gap, `div()` wraps its children in a `ScrollView` when scrolling is
+//! enabled, while keeping the outer `rect()` (and all its styling) intact:
+//!
+//! | Method | Effect |
+//! |---|---|
+//! | `.scroll_y()` | Vertical scroll, internal controller, scrollbar shown |
+//! | `.scroll_x()` | Horizontal scroll, internal controller, scrollbar shown |
+//! | `.with_scroll_controller(c)` | External controller for `scroll_to_x` / `scroll_to_y` |
+//! | `.show_scrollbar(bool)` | Toggle the scrollbar (default `true`) |
+//! | `.hide_scrollbar()` | Shorthand for `.show_scrollbar(false)` |
+//!
+//! The outer `Div`'s size bounds the viewport — set `.height(..)` /
+//! `.max_height(..)` for `scroll_y()`, `.width(..)` / `.max_width(..)` for
+//! `scroll_x()`. Without a bound, the viewport sizes to content and no
+//! scroll happens.
+//!
+//! ```
+//! div()
+//!     .height(Size::px(200.0))
+//!     .scroll_y()
+//!     .children(items)
+//! ```
+//!
+//! Non-scrolling `div()`s behave exactly as before — the internal
+//! `ScrollController` is allocated (hooks run unconditionally) but unused.
+//! `input()` uses the same pattern internally for horizontal scrolling.
 //!
 //! ## Element-specific defaults
 //!
@@ -148,7 +170,7 @@
 //! methods (`.selected(..)`, `.checked(..)`, `.disabled(..)`) stay
 //! callable for styling the same state:
 //!
-//! ```ignore
+//! ```
 //! let selected = use_state(|| false);
 //! button()
 //!     .with_selected(*selected.read())                  // state
@@ -161,55 +183,35 @@
 //! Without the prefix, `.selected(bool)` and `.selected(Fn)` would collide
 //! and method resolution would silently pick the inherent one.
 //!
+//! ## Accessibility
+//!
+//! Every interactive element sets an appropriate `AccessibilityRole`
+//! (`Button`, `CheckBox`, `RadioButton`, `TextInput`, `PasswordInput`).
+//!
+//! Checked state on `checkbox()` / `radio()` is exposed through the node's
+//! **description** (`"checked"` / `"unchecked"`, `"selected"` / `"not
+//! selected"`) rather than `set_toggled`, because `accesskit::Toggled`
+//! isn't reachable in the current dependency tree. The description
+//! supplements a label set via `.a11y_alt(..)` — it doesn't replace it, so
+//! custom labels survive.
+//!
+//! `input()` sets its `a11y_alt` to either the real value (text mode) or a
+//! fixed-length mask (password mode). The raw password never flows through
+//! `a11y_alt`.
+//!
 //! ## Known limitations
 //!
-//! Some elements approximate HTML because their implementation predates a
-//! framework feature or because the underlying primitive doesn't expose
-//! what's needed. These are documented here so contributors don't file
-//! them as bugs.
+//! ### Implementation approximations
 //!
-//! ### Checkbox and radio still use fill approximations
-//!
-//! `Style` gained a `border` field, so a real 1px outline is available to
-//! any `DecorationExt` primitive. `checkbox()` and `radio()` currently
-//! predate that and still paint their boxes/rings by **filling** their
-//! parent `div()`:
-//!
-//! * **`checkbox()`** — box is filled (`gray_100` unchecked / `blue_600`
-//!   checked) rather than outlined.
-//! * **`radio()`** — the ring is approximated with three nested `div()`s:
-//!   an outer filled circle, a transparent inner circle (the "hole"), and
-//!   a small dot shown when checked.
-//!
-//! Both are visually correct and interactive, but they don't consume the
-//! `Style::border` field — so a user override like
-//! `.border_1().border_color(gray_400())` on a `checkbox()` or `radio()`
-//! **is applied by the underlying `div()`**, but the element's own filled
-//! visual may still dominate. Refactoring `checkbox.rs` / `radio.rs` to
-//! use `.border(..)` for the outline is the natural next step (small —
-//! replace the fill/3-div nesting with a single border draw).
-//!
-//! ### Focus hack for `input()`
-//!
-//! `Div` only marks an element focusable when a `:focus`-family variant
-//! or a focus callback is registered. Elements that need focusability
-//! without a focus callback (e.g. `input()`) register a **no-op** `:focus`
-//! variant to force the flag:
-//!
-//! ```ignore
-//! style = style.focus(|s| s);  // registers :focus → Div sees focusable
-//! ```
-//!
-//! This is invisible at runtime but is a smell. A `Div::with_focusable(bool)`
-//! setter would remove it; until then, any focusable element that doesn't
-//! otherwise customize `:focus` carries this line.
-//!
-//! ### `:focus-within` approximation
-//!
-//! `div()` treats `:focus-within` as "self focused" — a `div` containing
-//! a focused child does **not** match `:focus-within`. Proper support
-//! needs descendant-focus tracking that `use_focus` doesn't currently
-//! expose.
+//! * **`checkbox()` / `radio()` use fill approximations** for their boxes
+//!   and rings (predating `Style::border`). User `.border_*()` on them is
+//!   applied by the underlying `div()`, but the filled visual dominates.
+//!   Refactor to `.border(..)` is a small follow-up.
+//! * **`a11y_checked` via description** — see the Accessibility section.
+//!   The proper `set_toggled` call needs a direct `accesskit` dependency.
+//! * **`:focus-within` is approximated** as "self focused" — a `div`
+//!   containing a focused child doesn't match `:focus-within`. Needs
+//!   descendant-focus tracking the framework doesn't expose.
 //!
 //! ### HTML parity gaps
 //!
@@ -217,39 +219,30 @@
 //!   to drive single-selection), no roving tabindex (each radio is
 //!   independently tabbable). Matches the standard React / Vue / Dioxus
 //!   pattern.
-//! * **`input(...)`** — no selection (drag / shift-click / select-all),
-//!   no clipboard (Ctrl+C/V/X), no IME preedit, no horizontal scrolling.
-//!   Long text clips with ellipsis; the cursor beyond that edge is not
-//!   visible.
-//! * **`radio()` / `checkbox()`** — `a11y_checked` isn't wired through
-//!   `AccessibilityData`; the role (`RadioButton` / `CheckBox`) is set
-//!   but the checked state isn't announced separately. A future
-//!   `a11y_builder(|node| node.set_checked(..))` call would complete it.
 //! * **`input(...)`** — `type="email"` / `"url"` / `"tel"` / `"number"` /
 //!   `"search"` all behave like `type="text"`. Only `type="text"` and
-//!   `type="password"` are distinguished.
+//!   `type="password"` are distinguished. Password mode opts out of
+//!   selection because mask ↔ value misalign on emoji.
+//! * **`input(...)`** — clipboard shortcuts (Ctrl+C/V/X) and selection
+//!   (drag, shift+arrow, Ctrl+A) **are implemented** — this paragraph
+//!   exists to point at the remaining gaps: no right-click context menu,
+//!   no undo/redo history, no drag-autoscroll.
 //!
-//! ## Reset limitation
+//! ### Reset limitation
 //!
 //! [`Style::merge_style`](crate::styling::Style::merge_style) uses a
 //! "differs from `Style::bare()`" test, so a field whose inherited value
 //! happens to equal its bare default cannot be reset by a child setting it
 //! back to that default. Every element that applies user-agent defaults
-//! exposes a `no_default_style()` escape hatch for cases where this matters
-//! (`padding: 0`, `margin: 0`, `radius: 0`, `cursor: default`).
-//!
-//! This also affects `border`: `Style::bare()` has `border: None`. A
-//! `.border_none()` call sets `None`, which **doesn't** override an
-//! existing border inside a variant — `None == None` skips the merge. To
-//! visually clear a border in a `:hover` / `:focus` variant, use
-//! `.border_0()` (sets `Some(zero-width Border)`), which does differ from
-//! `None` and therefore wins.
+//! exposes a `no_default_style()` escape hatch. This also affects `border`:
+//! use `.border_0()` (not `.border_none()`) to visually clear a border
+//! inside a variant.
 //!
 //! # Examples
 //!
 //! ## Container + text
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::{gray_50, gray_900};
 //! use torin::gaps::Gaps;
@@ -261,11 +254,55 @@
 //!     .child(text("Hello, world").text_color(gray_900()))
 //! ```
 //!
+//! ## Scrolling
+//!
+//! Vertical list bounded to 200px:
+//!
+//! ```
+//! use freyacn::prelude::*;
+//!
+//! div()
+//!     .height(Size::px(200.0))
+//!     .scroll_y()
+//!     .spacing(4.0)
+//!     .children(items.iter().map(|item| text(item)))
+//! ```
+//!
+//! Horizontal tag row:
+//!
+//! ```
+//! use freyacn::prelude::*;
+//!
+//! div()
+//!     .width(Size::px(300.0))
+//!     .scroll_x()
+//!     .hide_scrollbar()
+//!     .spacing(8.0)
+//!     .children(tags.iter().map(|t| tag(t)))
+//! ```
+//!
+//! Programmatic scroll with a controller:
+//!
+//! ```
+//! use freyacn::prelude::*;
+//! use freya::components::{ScrollConfig, use_scroll_controller};
+//!
+//! let controller = use_scroll_controller(ScrollConfig::default);
+//!
+//! div()
+//!     .height(Size::px(200.0))
+//!     .with_scroll_controller(controller)
+//!     .children(items)
+//!
+//! // From a button handler, say:
+//! // controller.scroll_to_y(0);
+//! ```
+//!
 //! ## Border
 //!
 //! Basic bordered card:
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::gray_200;
 //! use torin::gaps::Gaps;
@@ -278,53 +315,26 @@
 //!     .child(text("Card content"))
 //! ```
 //!
-//! Left accent stripe (per-side):
+//! Focus ring via border:
 //!
-//! ```ignore
-//! use freyacn::prelude::*;
-//! use crate::styling::colors::blue_500;
-//! use torin::gaps::Gaps;
-//!
-//! div()
-//!     .border_l(4.0)
-//!     .border_color(blue_500())
-//!     .padding(Gaps::new(12.0, 16.0, 12.0, 16.0))
-//!     .child(text("Important note"))
 //! ```
-//!
-//! Focus ring on a button:
-//!
-//! ```ignore
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::{blue_500, gray_300};
 //!
 //! button()
 //!     .border_1()
 //!     .border_color(gray_300())
-//!     .focus(|s| s.border_2().border_color(blue_500()).border_outer())
+//!     .focus_visible(|s| {
+//!         s.border_2()
+//!             .border_color(blue_500())
+//!             .border_outer()
+//!     })
 //!     .child("Click me")
-//! ```
-//!
-//! Border on an image:
-//!
-//! ```ignore
-//! use freyacn::prelude::*;
-//! use crate::styling::colors::gray_300;
-//!
-//! image("avatar.png")
-//!     .width(Size::px(48.0))
-//!     .height(Size::px(48.0))
-//!     .rounded_full()
-//!     .border_2()
-//!     .border_color(gray_300())
 //! ```
 //!
 //! ## Rich text
 //!
-//! `p(..)` takes ordered spans and children, so styled runs and inline
-//! elements interleave at the point they were added:
-//!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::{blue_600, gray_900};
 //!
@@ -336,15 +346,13 @@
 //!
 //! ## Button (basic + toggle)
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //!
-//! // Basic
 //! button()
 //!     .on_press(|_| println!("clicked"))
 //!     .child("Submit")
 //!
-//! // Toggle (controlled)
 //! let selected = use_state(|| false);
 //! button()
 //!     .with_selected(*selected.read())
@@ -355,7 +363,7 @@
 //!
 //! ## Checkbox
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::green_600;
 //!
@@ -364,18 +372,14 @@
 //!     .with_checked(*accepted.read())
 //!     .on_checked(move |_| accepted.set(true))
 //!     .on_unchecked(move |_| accepted.set(false))
-//!     .checked(|s| s.background(green_600().into()))   // :checked style
-//!     // optional custom icon:
-//!     // .icon(text("check").font_size(12.0))
+//!     .checked(|s| s.background(green_600().into()))
 //! ```
 //!
 //! ## Radio
 //!
-//! HTML radio grouping is caller-driven (there is no `name` attribute).
-//! Selection state lives in `use_state`:
-//!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
+//! use crate::styling::colors::green_600;
 //! use torin::prelude::Direction;
 //!
 //! #[derive(Clone, PartialEq)]
@@ -403,13 +407,10 @@
 //!     )
 //! ```
 //!
-//! Custom color — pair `.checked(..)` (the ring) with `.dot_color(..)`
-//! (the inner dot) so both stay consistent:
+//! Custom color — pair `.checked(...)` (the ring) with `.dot_color(...)`
+//! (the inner dot):
 //!
-//! ```ignore
-//! use freyacn::prelude::*;
-//! use crate::styling::colors::green_600;
-//!
+//! ```
 //! radio()
 //!     .with_checked(true)
 //!     .checked(|s| s.background(green_600().into()))
@@ -420,7 +421,7 @@
 //!
 //! Controlled text input:
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //!
 //! let name = use_state(String::new);
@@ -431,7 +432,7 @@
 //!
 //! Password + Enter-to-submit:
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //!
 //! let password = use_state(String::new);
@@ -444,29 +445,15 @@
 //!
 //! Disabled / read-only / max length:
 //!
-//! ```ignore
+//! ```
 //! input("admin").with_disabled(true)
 //! input(*value.read()).with_read_only(true)
 //! input(*code.read()).max_length(6).on_change(move |text| code.set(text))
 //! ```
 //!
-//! Input with a focus border (default UA border plus user overrides):
-//!
-//! ```ignore
-//! use freyacn::prelude::*;
-//! use crate::styling::colors::{blue_500, gray_300};
-//!
-//! input(*value.read())
-//!     .placeholder("Search…")
-//!     .on_change(move |text| value.set(text))
-//!     .border_1()
-//!     .border_color(gray_300())
-//!     .focus(|s| s.border_color(blue_500()))
-//! ```
-//!
 //! ## Image
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //!
 //! image("assets/logo.png")
@@ -478,10 +465,9 @@
 //!
 //! ## Composing elements
 //!
-//! Elements inherit text style and compose naturally — no glue code
-//! required:
+//! Elements inherit text style and compose naturally:
 //!
-//! ```ignore
+//! ```
 //! use freyacn::prelude::*;
 //! use crate::styling::colors::{gray_200, gray_500, gray_900, red_600};
 //! use torin::gaps::Gaps;
@@ -490,7 +476,7 @@
 //! let email = use_state(String::new);
 //!
 //! div()
-//!     .text_color(gray_900())          // inherited by text() below
+//!     .text_color(gray_900())
 //!     .padding(Gaps::new(24.0, 24.0, 24.0, 24.0))
 //!     .border_1()
 //!     .border_color(gray_200())

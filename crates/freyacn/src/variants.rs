@@ -18,7 +18,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use freyacn::{variant, Variant};
 //!
 //! #[variant]

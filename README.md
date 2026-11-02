@@ -1,22 +1,28 @@
-> ⚠️ **Work in progress.** FreyaCN is under active development and its public
-> API is **not yet stable**. Breaking changes may land in any release.
->
-> **Status:** pre-release. Expect rough edges, missing features, and occasional
-> doc/code drift. If you want to try it, use a `git` dependency pinned to a
-> specific commit. If you find a bug or want to discuss the design, please
-> open an issue.
-
-**Targets Freya `0.5.0-rc.10`.**
+**Targets Freya `0.5.0-rc.13`.**
 
 ---
 
-**FreyaCN** is a styling and theming framework that lets you build interfaces
-across multiple design languages from a single foundation.
+**FreyaCN** is a design-system layer for [Freya](https://github.com/marc2332/freya).
+It gives Freya three things that work as one:
 
-Instead of locking you into one aesthetic, FreyaCN treats design systems as
-pluggable layers — start with a neutral, shadcn-style theme, switch to a
-Material-inspired one, or ship your own JSON theme file, all within the same
-project and API surface.
+- **Theming** — JSON files define every color, spacing, radius, and
+  typography value. Swap the file, change the whole UI. No rebuild.
+- **Styling** — a Tailwind-inspired utility vocabulary, available both as
+  fluent builder methods (`Style::default().bg(blue_500()).p_4()`) and as
+  parsed class strings (`.style("bg-blue-500 p-4 hover:bg-blue-700")`).
+- **Elements** — HTML-like primitives (`div`, `input`, `button`, `checkbox`,
+  `radio`, `text`, `p`, `image`) pre-wired to the same style cascade, so a
+  rule written once works everywhere.
+
+The layers share one `Style` struct, one variant-precedence model, and one
+inheritance chain — which is what makes a design system feel coherent
+instead of a stack of disconnected utilities. Start with the bundled
+`default-dark` theme, swap in a Material-inspired one, or ship your own JSON
+file; the API stays the same.
+
+> ⚠️ **Pre-release.** The public API is not yet stable. Breaking changes may
+> land in any `0.x` release. Pin to a specific commit or tag for anything you
+> intend to keep working.
 
 # Core Ideas
 
@@ -690,7 +696,7 @@ pub fn resolve_fill(
 
 ```toml
 [dependencies]
-freyacn = "0.2.1"
+freyacn = "0.2.2"
 ```
 
 > The crates.io release may lag behind `git`. Because the API is pre-release,

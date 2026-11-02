@@ -256,7 +256,7 @@ impl Style {
     /// value are left untouched, which makes this method convenient for
     /// composing *partial* overrides:
     ///
-    /// ```ignore
+    /// ```
     /// let styled = Style::default().merge_style(&Style {
     ///     background: red().into(),
     ///     padding: Gaps::new(8.0, 8.0, 8.0, 8.0),

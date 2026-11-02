@@ -18,9 +18,9 @@ const DEFAULT_SIZE: f32 = 16.0;
 ///
 /// ## Behavior
 ///
-/// * Controlled: reads `.with_checked(bool)`, fires `.on_checked(...)`
-///   when activated while unchecked, `.on_unchecked(...)` when activated
-///   while checked. The caller flips the prop in the handler.
+/// * Controlled: reads `.with_checked(bool)`, fires `.on_checked(...)` when
+///   activated while unchecked, `.on_unchecked(...)` when activated while
+///   checked. The caller flips the prop in the handler.
 /// * Activatable via pointer, Enter, Space, and assistive technology
 ///   (via `.on_all_press` on the underlying `div`).
 /// * Focusable when enabled; not focusable when disabled.
@@ -29,7 +29,7 @@ const DEFAULT_SIZE: f32 = 16.0;
 ///
 /// ## Example
 ///
-/// ```ignore
+/// ```
 /// let checked = use_state(|| false);
 /// checkbox()
 ///     .with_checked(*checked.read())
@@ -37,10 +37,9 @@ const DEFAULT_SIZE: f32 = 16.0;
 ///     .on_unchecked(move |_| checked.set(false))
 /// ```
 ///
-/// Variants use `StyledExt::checked` (no shadowing conflict now that the
-/// state prop is `with_checked`):
+/// Variants:
 ///
-/// ```ignore
+/// ```
 /// use crate::styling::colors::green_600;
 /// checkbox().checked(|mut s| {
 ///     s.background = green_600().into();
@@ -48,44 +47,40 @@ const DEFAULT_SIZE: f32 = 16.0;
 /// })
 /// ```
 ///
-/// Custom icon:
+/// Custom icon / icon color:
 ///
-/// ```ignore
+/// ```
 /// checkbox().icon(text("check").font_size(12.0))
+/// checkbox().check_color(green_500())
 /// ```
 ///
-/// Custom check icon color:
+/// ## Accessibility
 ///
-/// ```ignore
-/// use crate::styling::colors::amber_400;
-/// checkbox().check_color(amber_400())
-/// ```
+/// Role is `CheckBox`. Checked state is exposed through the node's
+/// `description` (`"checked"` / `"unchecked"`) because
+/// `accesskit::Toggled` isn't reachable in the current dependency tree.
+/// The description supplements the label set via `.a11y_alt(..)`, so a
+/// custom label is preserved alongside the state.
 ///
 /// ## Composition
 ///
-/// Built on top of `div()`. `div` owns:
-///
-/// * style inheritance (`try_consume_context` / `use_provide_context`),
-/// * pointer and hover tracking for `:hover` and `:active`,
-/// * focus tracking for `:focus` and `:focus-visible`,
-/// * a11y id and focusability,
-/// * variant resolution, including `:checked` via `with_checked(..)`.
-///
-/// `Checkbox` only carries the UA defaults, forwards its own semantic
-/// events (via `Div::with_semantic_events`), and adds the activation
-/// handler and icon child.
+/// Built on top of `div()`. `div` owns style inheritance, pointer and
+/// focus tracking, a11y id, and variant resolution (including `:checked`
+/// via `.with_checked(..)`). `Checkbox` only carries UA defaults, forwards
+/// semantic events (via `Div::with_semantic_events`), and adds the
+/// activation handler + icon child.
 ///
 /// ## Reset limitation
 ///
 /// UA `width`, `height`, `radius`, and `cursor` cannot be reset via
-/// `.width(..)` and friends because of `merge_style`'s "differs from bare"
-/// rule. Use `.size(..)` to pick a non-default size.
+/// `.width(..)` and friends because of `merge_style`'s "differs from
+/// bare" rule. Use `.size(..)` to pick a non-default size.
 ///
-/// ## No border field
+/// ## No border field usage
 ///
-/// `Style` has no border field, so the checkbox box is filled rather than
-/// outlined. Unchecked = `gray_100`; checked = `blue_600`. If you need a
-/// true border, wrap the checkbox in your own `rect()`.
+/// The box is filled rather than outlined (unchecked = `gray_100`,
+/// checked = `blue_600`). If you need a true border, wrap the checkbox
+/// in your own `div()` with `.border_*()`.
 #[derive(PartialEq, Clone)]
 pub struct Checkbox {
     style: Style,
@@ -135,15 +130,15 @@ impl Checkbox {
 
     // ── state ──────────────────────────────────────────────────────
 
-    /// Controlled checked state (HTML `checked`).
-    ///
-    /// Named `with_checked` so `StyledExt::checked(..)` remains callable
-    /// for styling the `:checked` variant.
+    /// Controlled checked state (HTML `checked`). Named `with_checked`
+    /// so `StyledExt::checked(..)` remains callable for styling the
+    /// `:checked` variant.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self
     }
 
+    /// HTML `disabled`.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
@@ -173,11 +168,13 @@ impl Checkbox {
 
     // ── activation semantics ───────────────────────────────────────
 
+    /// Fires when the box is activated while `checked == false`.
     pub fn on_checked(mut self, cb: impl Into<EventHandler<Event<PressEventData>>>) -> Self {
         self.on_checked = Some(cb.into());
         self
     }
 
+    /// Fires when the box is activated while `checked == true`.
     pub fn on_unchecked(mut self, cb: impl Into<EventHandler<Event<PressEventData>>>) -> Self {
         self.on_unchecked = Some(cb.into());
         self
@@ -235,7 +232,6 @@ fn checkbox_ua_style(size: f32, disabled: bool) -> Style {
     style.main_align = Alignment::center();
     style.cross_align = Alignment::center();
 
-    // StyledExt named variants on `Style`.
     style = style.checked(|mut s| {
         s.background = blue_600().into();
         s
@@ -269,6 +265,22 @@ impl Component for Checkbox {
         *div_el.accessibility_data_mut() = self.accessibility.clone();
 
         div_el = div_el.a11y_role(AccessibilityRole::CheckBox);
+
+        // `accesskit::Toggled` isn't reachable, so encode the checked
+        // state in the node's description. `set_description` supplements
+        // the label set via `.a11y_alt(..)` rather than replacing it, so
+        // a custom label is preserved alongside the state.
+        //
+        // If a direct `accesskit` dependency is added later, this
+        // collapses to `node.set_toggled(..)`:
+        //
+        //   div_el = div_el.a11y_builder(move |node| {
+        //       node.set_toggled(if was_checked { Toggled::True } else { Toggled::False });
+        //   });
+        let was_checked = self.checked;
+        div_el = div_el.a11y_builder(move |node| {
+            node.set_description(if was_checked { "checked" } else { "unchecked" });
+        });
 
         // Forward all 8 semantic callbacks in one line.
         div_el = div_el.with_semantic_events(self.semantic_events.clone());

@@ -29,7 +29,7 @@ const RING_WIDTH: f32 = 2.0;
 ///
 /// ## Example
 ///
-/// ```ignore
+/// ```
 /// let selected = use_state(|| "a");
 /// radio()
 ///     .with_checked(*selected.read() == "a")
@@ -40,9 +40,9 @@ const RING_WIDTH: f32 = 2.0;
 ///
 /// HTML radios with the same `name` form a group where selecting one
 /// deselects the others. **This is not implemented** — the caller owns
-/// the single-selection logic via `use_state`:
+/// the single-selection logic via `use_state`.
 ///
-/// ```ignore
+/// ```
 /// let selected = use_state(|| "small");
 ///
 /// div()
@@ -59,42 +59,31 @@ const RING_WIDTH: f32 = 2.0;
 ///     )
 /// ```
 ///
-/// Roving tabindex / arrow-key navigation within a group is also not
-/// implemented — each radio is independently tabbable.
+/// ## Accessibility
 ///
-/// ## Restyling the ring
+/// Role is `RadioButton`. Selected state is exposed through the node's
+/// `description` (`"selected"` / `"not selected"`) as a workaround for
+/// the missing `accesskit::Toggled`. The description supplements a
+/// label set via `.a11y_alt(..)` rather than replacing it.
 ///
-/// `.checked(|s| s.background(green_600().into()))` recolors the **ring**
-/// when checked. Because the **dot** defaults to `blue_600`, you'll need
-/// `.dot_color(green_600())` alongside it for a fully consistent radio:
+/// ## Custom colors
 ///
-/// ```ignore
+/// `.checked(..)` recolors the **ring**; `.dot_color(..)` colors the
+/// **dot**. Pair them for a consistent radio:
+///
+/// ```
 /// radio()
+///     .with_checked(true)
 ///     .checked(|s| s.background(green_600().into()))
 ///     .dot_color(green_600())
 /// ```
 ///
-/// This mirrors HTML's `accent-color` — one color for the whole control.
-///
 /// ## Composition
 ///
-/// Built on top of `div()`. `div` owns:
-///
-/// * style inheritance (`try_consume_context` / `use_provide_context`),
-/// * pointer and hover tracking for `:hover` and `:active`,
-/// * focus tracking for `:focus` and `:focus-visible`,
-/// * a11y id and focusability,
-/// * variant resolution, including `:checked` via `.with_checked(..)`.
-///
-/// `Radio` only carries the UA defaults, forwards its own semantic
-/// events (via `Div::with_semantic_events`), and adds the ring / hole /
-/// dot children.
-///
-/// ## Reset limitation
-///
-/// UA `width`, `height`, `radius`, and `cursor` cannot be reset via
-/// `.width(..)` and friends because of `merge_style`'s "differs from
-/// bare" rule. Use `.size(..)` to pick a non-default size.
+/// Built on top of `div()`. `div` owns style inheritance, pointer and
+/// focus tracking, a11y id, and variant resolution. `Radio` carries UA
+/// defaults, forwards semantic events, and adds the ring / hole / dot
+/// children.
 #[derive(PartialEq, Clone)]
 pub struct Radio {
     style: Style,
@@ -139,8 +128,7 @@ impl Radio {
     // ── state ──────────────────────────────────────────────────────
 
     /// Controlled checked state. Named `with_checked` so
-    /// `StyledExt::checked(..)` remains callable for styling the
-    /// `:checked` variant.
+    /// `StyledExt::checked(..)` remains callable.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self
@@ -214,15 +202,12 @@ impl HasSemanticEvents for Radio {
 }
 
 /// HTML `<input type="radio">` user-agent defaults.
-///
-/// The `:checked` variant swaps the outer ring fill from `gray_300` to
-/// `blue_600`; the caller can override with `.checked(..)`.
 fn radio_ua_style(size: f32, disabled: bool) -> Style {
     let mut style = Style::bare();
     style.width = Size::px(size);
     style.height = Size::px(size);
     style.background = gray_300().into();
-    style.radius = CornerRadius::new_all(9999.0); // full circle
+    style.radius = CornerRadius::new_all(9999.0);
     style.padding = Gaps::new_all(RING_WIDTH);
     style.cursor = if disabled {
         CursorIcon::NotAllowed
@@ -246,7 +231,7 @@ fn radio_ua_style(size: f32, disabled: bool) -> Style {
 
 impl Component for Radio {
     fn render(&self) -> impl IntoElement {
-        // ── 1. Base div — owns style resolution, events, a11y ───────
+        // ── 1. Base div ────────────────────────────────────────────
         let mut div_el: Div = div()
             .with_checked(self.checked)
             .with_disabled(self.disabled);
@@ -257,14 +242,26 @@ impl Component for Radio {
         *div_el.accessibility_data_mut() = self.accessibility.clone();
 
         div_el = div_el.a11y_role(AccessibilityRole::RadioButton);
+
+        // Same a11y workaround as checkbox: description encodes state.
+        let was_checked = self.checked;
+        div_el = div_el.a11y_builder(move |node| {
+            node.set_description(if was_checked {
+                "selected"
+            } else {
+                "not selected"
+            });
+        });
+
         div_el = div_el.with_semantic_events(self.semantic_events.clone());
 
-        // ── 2. Activation ───────────────────────────────────────────
+        // ── 2. Activation ──────────────────────────────────────────
         if self.on_checked.is_some() {
             let on_checked = self.on_checked.clone();
             let was_checked = self.checked;
             div_el = div_el.on_all_press(move |e: Event<PressEventData>| {
-                // HTML semantics: activating an already-checked radio is a no-op.
+                // HTML semantics: activating an already-checked radio is
+                // a no-op.
                 if !was_checked {
                     if let Some(cb) = &on_checked {
                         cb.call(e);
@@ -274,7 +271,6 @@ impl Component for Radio {
         }
 
         // ── 3. Inner "hole" — transparent, so the parent bg shows ──
-        // The outer `div`'s 2px padding exposes the ring color around this.
         let inner_size = (self.size - 2.0 * RING_WIDTH).max(0.0);
         let mut inner_style = Style::bare();
         inner_style.width = Size::px(inner_size);
@@ -287,7 +283,7 @@ impl Component for Radio {
         let mut inner = div();
         *inner.get_style() = inner_style;
 
-        // ── 4. Dot (only when checked) ──────────────────────────────
+        // ── 4. Dot (only when checked) ─────────────────────────────
         if self.checked {
             let dot_size = self.size * 0.55;
             let dot_color = self.dot_color.clone().unwrap_or_else(|| blue_600());
