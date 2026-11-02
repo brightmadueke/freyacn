@@ -33,7 +33,7 @@ thread_local! {
 
 /// Install `theme` as the current thread's active theme.
 ///
-/// Called automatically by [`use_init_theme_registry`] and
+/// Called automatically by [`load_theme_registry`] and
 /// [`ThemeHandle::set_active`]. `Style::default()` calls created **after**
 /// this point will pick up the theme's `background` / `foreground`
 /// tokens.
@@ -921,7 +921,7 @@ impl ThemeHandle {
     }
 }
 
-pub fn use_init_theme_registry(initial_json: &str) -> ThemeHandle {
+pub fn load_theme_registry(initial_json: &str) -> ThemeHandle {
     use_hook(|| {
         let registry = Arc::new(ThemeRegistry::new());
         let theme = registry.load(initial_json).expect("invalid initial theme");
@@ -932,7 +932,7 @@ pub fn use_init_theme_registry(initial_json: &str) -> ThemeHandle {
     })
 }
 
-pub fn use_init_theme_registry_from_dir(dir: &std::path::Path) -> ThemeHandle {
+pub fn load_theme_registry_from_dir(dir: &std::path::Path) -> ThemeHandle {
     use_hook(|| {
         let registry = Arc::new(ThemeRegistry::new());
         registry

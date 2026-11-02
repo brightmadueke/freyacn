@@ -5,29 +5,29 @@ use std::fs;
 
 #[derive(Parser)]
 #[command(
-    name = "freyacn",
+    name = "freyacn_core",
     version = "0.1.0",
     author = "Bright Madueke",
-    about = "Add freyacn components to your Freya project",
+    about = "Add freyacn_core components to your Freya project",
     long_about = "\
-    freyacn-cli manages freyacn components in your Freya project.
+    freyacn_core-cli manages freyacn_core components in your Freya project.
 
 Components are written into your project as source. There is no compiled
-freyacn dependency to pull in — you add a component, the CLI writes its
+freyacn_core dependency to pull in — you add a component, the CLI writes its
 files, and the code is yours from that point on. Edit it, extend it, or
 delete it.
 
 Typical workflow:
 
-  $ freyacn init
-  $ freyacn add button dialog card
+  $ freyacn_core init
+  $ freyacn_core add button dialog card
 
-Run `freyacn init` once per project. It creates `freyacn.toml`, sets up
+Run `freyacn_core init` once per project. It creates `freyacn_core.toml`, sets up
 theme tokens, and scaffolds the shared module that components depend on.
-After that, `freyacn add` brings in components as you need them, and
-`freyacn list` shows everything available.
+After that, `freyacn_core add` brings in components as you need them, and
+`freyacn_core list` shows everything available.
 
-Configuration lives in `freyacn.toml` at the project root. It records
+Configuration lives in `freyacn_core.toml` at the project root. It records
 where components are written, which registry to fetch from, and how the
 theme is structured. Commit it alongside your code.
 
@@ -86,7 +86,7 @@ fn initialize_project(
             // create the components/ui directory
             fs::create_dir_all(&new_dir.join("components/ui"))?;
 
-            // todo: check registry and create freyacn.toml
+            // todo: check registry and create freyacn_core.toml
         }
         None => {}
     }

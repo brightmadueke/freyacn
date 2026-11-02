@@ -1,5 +1,5 @@
 [package]
-name = "freyacn"
+name = "freyacn_core"
 version.workspace = true
 edition.workspace = true
 description = "Design-system layer for Freya: JSON themes, Tailwind-inspired utilities, and HTML-like elements sharing one style cascade."

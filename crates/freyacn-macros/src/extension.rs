@@ -126,7 +126,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // style  →  freyacn::StyleExt
+        // style  →  freyacn_core::StyleExt
         // -------------------------------------------------------------------
         //
         // The `style` field is a plain `Style` — the user's override layer.
@@ -238,7 +238,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // accessibility  →  freyacn::AccessibilityExt
+        // accessibility  →  freyacn_core::AccessibilityExt
         // -------------------------------------------------------------------
         "accessibility" => Extension {
             fields: vec![quote! {

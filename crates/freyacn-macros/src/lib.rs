@@ -1,17 +1,17 @@
-//! Procedural macros for the [`freyacn`] crate.
+//! Procedural macros for the [`freyacn_core`] crate.
 //!
 //! This crate provides the attribute macros that turn plain Rust functions
-//! and enums into the styled, prop-driven building blocks freyacn uses.
+//! and enums into the styled, prop-driven building blocks freyacn_core uses.
 //!
 //! * [`macro@component`] — turns a function into a component struct.
 //! * [`macro@variant`]   — turns an enum into a style-resolving variant type.
-//! * [`macro@extensions`] — opts a hand-written struct into a freyacn
+//! * [`macro@extensions`] — opts a hand-written struct into a freyacn_core
 //!   extension bundle (used standalone; the `ext(...)` group inside
 //!   `#[component]` is the normal path).
 //! * [`macro@struct_fields`] — stub attribute that fires when
 //!   `#[struct_fields(...)]` is placed in the wrong position.
 //!
-//! [`freyacn`]: https://crates.io/crates/freyacn
+//! [`freyacn_core`]: https://crates.io/crates/freyacn
 
 mod component;
 mod extension;

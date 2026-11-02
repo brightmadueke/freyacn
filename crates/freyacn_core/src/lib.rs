@@ -528,7 +528,7 @@
 //! [`ThemeRegistry::set_active`]: crate::theme::ThemeRegistry::set_active
 //! [`ThemeRegistry::list`]: crate::theme::ThemeRegistry::list
 //! [`ThemeRegistry::ids`]: crate::theme::ThemeRegistry::ids
-//! [`use_init_theme_registry`]: crate::theme::use_init_theme_registry
+//! [`use_init_theme_registry`]: crate::theme::load_theme_registry
 //! [`StyleVariant::priority`]: crate::styling::StyleVariant::priority
 
 extern crate self as freyacn;

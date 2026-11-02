@@ -1843,22 +1843,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "freyacn"
-version = "0.2.2"
-dependencies = [
- "freya",
- "freya-core",
- "freya-icons",
- "freyacn_macros",
- "paste",
- "rustc-hash",
- "serde",
- "serde_json",
- "torin",
- "ureq",
-]
-
-[[package]]
 name = "freyacn-mmaterial3"
 version = "0.2.2"
 
@@ -1879,6 +1863,22 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "freyacn_core"
+version = "0.2.2"
+dependencies = [
+ "freya",
+ "freya-core",
+ "freya-icons",
+ "freyacn_macros",
+ "paste",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "torin",
+ "ureq",
 ]
 
 [[package]]

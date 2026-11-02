@@ -406,7 +406,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 &prop.name,
                 format!(
                     "`{}` collides with a field contributed by `ext(...)`. \
-                     Extension fields are reserved by freyacn and cannot be \
+                     Extension fields are reserved by freyacn_core and cannot be \
                      shadowed by {}.",
                     prop.name,
                     source_label(prop.source),

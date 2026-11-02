@@ -61,7 +61,7 @@ rect()
 .padding(t.spacing("4"));            // f32
 ```
 
-Themes are loadable from disk (`use_init_theme_registry_from_dir`), swappable
+Themes are loadable from disk (`load_theme_registry_from_dir`), swappable
 at runtime (`themes.set_active("default-light")?`), reloadable without a
 rebuild (`themes.reload_dir(path)?`), and validated on load (missing required
 tokens and low-contrast pairs produce warnings on stderr — they never fail the
