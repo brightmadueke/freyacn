@@ -1,8 +1,3 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="bonsai/bonsai-dark.svg">
-  <img alt="My Git Bonsai, grown from my GitHub activity" src="bonsai/bonsai-light.svg" width="100%">
-</picture>
-
 **Targets Freya `0.5.0-rc.13`.**
 
 ---
