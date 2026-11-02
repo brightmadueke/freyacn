@@ -4,9 +4,9 @@ use crate::styling::styled::StyledExt;
 use crate::theme::active_theme;
 use freya_core::data::Overflow;
 use freya_core::prelude::{
-    AspectRatio, CornerRadius, CursorIcon, Fill, FontFeature, FontSize, FontSlant, FontWeight,
-    FontWidth, ImageCover, LetterSpacing, SamplingMode, Scale, TextAlign, TextDecoration,
-    TextOverflow, TextShadow, TransformOrigin,
+    AspectRatio, Border, CornerRadius, CursorIcon, Fill, FontFeature, FontSize, FontSlant,
+    FontWeight, FontWidth, ImageCover, Layer, LetterSpacing, SamplingMode, Scale, TextAlign,
+    TextDecoration, TextOverflow, TextShadow, TransformOrigin,
 };
 use std::borrow::Cow;
 use torin::{
@@ -47,6 +47,10 @@ pub struct Style {
     pub opacity: f32,
     pub scale: Scale,
     pub transform_origin: TransformOrigin,
+    pub layer: Layer,
+
+    // ---- border ----
+    pub border: Option<Border>,
 
     // ---- radius ----
     pub radius: CornerRadius,
@@ -117,7 +121,6 @@ impl Style {
     /// or any place where ambient thread-local state must not leak in.
     pub fn bare() -> Self {
         Self {
-            // exactly the current `Default` body, verbatim
             background: Fill::default(),
             text_color: black().into(),
             text_align: TextAlign::default(),
@@ -137,9 +140,11 @@ impl Style {
             overflow: Overflow::default(),
             blur: f32::default(),
             rotation: f32::default(),
-            opacity: f32::default(),
+            opacity: 1.0,
             scale: Scale { x: 1.0, y: 1.0 },
             transform_origin: TransformOrigin::default(),
+            layer: Layer::default(),
+            border: None,
             radius: CornerRadius::default(),
             width: Size::default(),
             height: Size::default(),
@@ -190,6 +195,248 @@ impl Style {
         }
         style
     }
+
+    /// The subset of properties that flow from a parent element to its
+    /// descendants, mirroring the CSS `inherit`-able property set.
+    ///
+    /// Non-inheritable fields (`background`, `border`, `padding`,
+    /// `margin`, `width`, `direction`, `content`, `variants`, effects,
+    /// layout, media, …) are reset to their [`Style::bare`] values so that
+    /// `parent.inheritable_subset()` can be merged *beneath* a child's own
+    /// style without the parent bleeding box-model or paint properties into
+    /// the child.
+    ///
+    /// # Caveat
+    ///
+    /// Because [`Style::merge_style`] uses a "differs from [`Style::bare`]"
+    /// test, a field whose inherited value happens to equal its bare
+    /// default **cannot** be explicitly restored by a child by setting it
+    /// back to that default. `font_size`, `text_color`, and similar fields
+    /// are most affected. If true CSS-like `unset` semantics are required,
+    /// replace [`Style::merge_style`] with a patch-based merge built on
+    /// `Option<T>` fields.
+    pub fn inheritable_subset(&self) -> Style {
+        let mut s = Style::bare();
+
+        // ---- paint: foreground only (background does *not* inherit) ----
+        s.text_color = self.text_color.clone();
+        s.text_align = self.text_align.clone();
+
+        // ---- typography: everything here cascades in CSS ----
+        s.font_size = self.font_size.clone();
+        s.font_weight = self.font_weight.clone();
+        s.letter_spacing = self.letter_spacing.clone();
+        s.text_overflow = self.text_overflow.clone();
+        s.font_features = self.font_features.clone();
+        s.font_families = self.font_families.clone();
+        s.font_style = self.font_style.clone();
+        s.font_stretch = self.font_stretch.clone();
+        s.line_height = self.line_height;
+        s.text_shadows = self.text_shadows.clone();
+        s.text_decoration = self.text_decoration.clone();
+
+        // ---- interaction ----
+        s.cursor = self.cursor.clone();
+        s.cursor_visible = self.cursor_visible;
+
+        // ---- border: does NOT inherit (matches CSS) ----
+        // left as `None` from `Style::bare()`
+
+        // ---- layout: flow direction is inherited in CSS (`direction`) ----
+        // Enable this if you want RTL to cascade down the tree:
+        // s.direction = self.direction.clone();
+
+        s
+    }
+
+    /// Merge `other` into `self`, with `other` taking precedence.
+    ///
+    /// Any field of `other` whose value differs from [`Style::bare`]'s
+    /// counterpart is copied over. Fields that still hold their default
+    /// value are left untouched, which makes this method convenient for
+    /// composing *partial* overrides:
+    ///
+    /// ```ignore
+    /// let styled = Style::default().merge_style(&Style {
+    ///     background: red().into(),
+    ///     padding: Gaps::new(8.0, 8.0, 8.0, 8.0),
+    ///     ..Style::bare()
+    /// });
+    /// ```
+    ///
+    /// Because of the "differs from default" rule, this method cannot be
+    /// used to *reset* a field back to its default value; do that with a
+    /// direct assignment or by starting from [`Style::bare`].
+    ///
+    /// Returns `self` so that merges can be chained.
+    pub fn merge_style(mut self, other: &Style) -> Self {
+        let bare = Style::bare();
+
+        // ---- paint ----
+        if other.background != bare.background {
+            self.background = other.background.clone();
+        }
+        if other.text_color != bare.text_color {
+            self.text_color = other.text_color.clone();
+        }
+        if other.text_align != bare.text_align {
+            self.text_align = other.text_align.clone();
+        }
+
+        // ---- typography ----
+        if other.font_size != bare.font_size {
+            self.font_size = other.font_size.clone();
+        }
+        if other.font_weight != bare.font_weight {
+            self.font_weight = other.font_weight.clone();
+        }
+        if other.letter_spacing != bare.letter_spacing {
+            self.letter_spacing = other.letter_spacing.clone();
+        }
+        if other.text_overflow != bare.text_overflow {
+            self.text_overflow = other.text_overflow.clone();
+        }
+        if !other.font_features.is_empty() {
+            self.font_features = other.font_features.clone();
+        }
+        if !other.font_families.is_empty() {
+            self.font_families = other.font_families.clone();
+        }
+        if other.font_style != bare.font_style {
+            self.font_style = other.font_style.clone();
+        }
+        if other.font_stretch != bare.font_stretch {
+            self.font_stretch = other.font_stretch.clone();
+        }
+        if other.line_height != bare.line_height {
+            self.line_height = other.line_height;
+        }
+        if !other.text_shadows.is_empty() {
+            self.text_shadows = other.text_shadows.clone();
+        }
+        if other.text_decoration != bare.text_decoration {
+            self.text_decoration = other.text_decoration.clone();
+        }
+
+        // ---- interaction ----
+        if other.cursor != bare.cursor {
+            self.cursor = other.cursor.clone();
+        }
+        if other.cursor_visible != bare.cursor_visible {
+            self.cursor_visible = other.cursor_visible;
+        }
+
+        // ---- effects ----
+        if other.overflow != bare.overflow {
+            self.overflow = other.overflow.clone();
+        }
+        if other.blur != bare.blur {
+            self.blur = other.blur;
+        }
+        if other.rotation != bare.rotation {
+            self.rotation = other.rotation;
+        }
+        if other.opacity != bare.opacity {
+            self.opacity = other.opacity;
+        }
+        if other.scale != bare.scale {
+            self.scale = other.scale.clone();
+        }
+        if other.transform_origin != bare.transform_origin {
+            self.transform_origin = other.transform_origin.clone();
+        }
+        if other.layer != bare.layer {
+            self.layer = other.layer.clone();
+        }
+
+        // ---- border ----
+        if other.border != bare.border {
+            self.border = other.border.clone();
+        }
+
+        // ---- radius ----
+        if other.radius != bare.radius {
+            self.radius = other.radius.clone();
+        }
+
+        // ---- layout: dimensions ----
+        if other.width != bare.width {
+            self.width = other.width.clone();
+        }
+        if other.height != bare.height {
+            self.height = other.height.clone();
+        }
+        if other.min_width != bare.min_width {
+            self.min_width = other.min_width.clone();
+        }
+        if other.min_height != bare.min_height {
+            self.min_height = other.min_height.clone();
+        }
+        if other.max_width != bare.max_width {
+            self.max_width = other.max_width.clone();
+        }
+        if other.max_height != bare.max_height {
+            self.max_height = other.max_height.clone();
+        }
+
+        // ---- layout: box model ----
+        if other.padding != bare.padding {
+            self.padding = other.padding.clone();
+        }
+        if other.margin != bare.margin {
+            self.margin = other.margin.clone();
+        }
+
+        // ---- layout: flow ----
+        if other.spacing != bare.spacing {
+            self.spacing = other.spacing.clone();
+        }
+        if other.offset_x != bare.offset_x {
+            self.offset_x = other.offset_x.clone();
+        }
+        if other.offset_y != bare.offset_y {
+            self.offset_y = other.offset_y.clone();
+        }
+        if other.direction != bare.direction {
+            self.direction = other.direction.clone();
+        }
+        if other.main_align != bare.main_align {
+            self.main_align = other.main_align.clone();
+        }
+        if other.cross_align != bare.cross_align {
+            self.cross_align = other.cross_align.clone();
+        }
+        if other.position != bare.position {
+            self.position = other.position.clone();
+        }
+        if other.content != bare.content {
+            self.content = other.content.clone();
+        }
+
+        // ---- media ----
+        if other.object_fit != bare.object_fit {
+            self.object_fit = other.object_fit.clone();
+        }
+        if other.object_position != bare.object_position {
+            self.object_position = other.object_position.clone();
+        }
+        if other.sampling_mode != bare.sampling_mode {
+            self.sampling_mode = other.sampling_mode.clone();
+        }
+        if other.image_blur != bare.image_blur {
+            self.image_blur = other.image_blur;
+        }
+        if other.snap_to_grid != bare.snap_to_grid {
+            self.snap_to_grid = other.snap_to_grid;
+        }
+
+        // ---- variants ----
+        if other.variants != bare.variants {
+            self.variants = other.variants.clone();
+        }
+
+        self
+    }
 }
 
 impl StyledExt for Style {
@@ -197,3 +444,9 @@ impl StyledExt for Style {
         self
     }
 }
+
+/// Context payload carrying the resolved style of the nearest `Div` ancestor.
+/// Wrapped in a newtype so it can't be confused with any other `Style`
+/// context in the tree.
+#[derive(Clone, PartialEq)]
+pub struct InheritedStyle(pub Style);

@@ -5,10 +5,11 @@ use crate::styling::style_variants::StyleVariant;
 use crate::styling::styled_string::StyledString;
 use crate::theme::{ComponentState, Theme};
 use freya_core::data::Overflow;
+use freya_core::layers::Layer;
 use freya_core::prelude::{
-    AspectRatio, CornerRadius, FontFeature, FontSize, FontSlant, FontWeight, FontWidth, ImageCover,
-    LetterSpacing, SamplingMode, Scale, TextAlign, TextDecoration, TextOverflow, TextShadow,
-    TransformOrigin,
+    AspectRatio, Border, BorderAlignment, BorderWidth, CornerRadius, FontFeature, FontSize,
+    FontSlant, FontWeight, FontWidth, ImageCover, LetterSpacing, SamplingMode, Scale, TextAlign,
+    TextDecoration, TextOverflow, TextShadow, TransformOrigin,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -6466,6 +6467,216 @@ pub trait StyledExt: Sized {
     /// `1px` gap between children. Tailwind's `gap-px`.
     fn gap_px(self) -> Self {
         self.gap(1.0)
+    }
+
+    // ---- z-index / layer ----
+
+    /// Sets the painting layer. `Layer::Relative(n)` is the closest thing to `z-index: n`,
+    /// but it is relative to the *parent's* layer. Use `Overlay` for modals and dropdowns.
+    fn layer(mut self, layer: impl Into<Layer>) -> Self {
+        self.get_style().layer = layer.into();
+        self
+    }
+
+    fn z_auto(self) -> Self {
+        self.layer(Layer::Relative(0))
+    }
+    fn z_0(self) -> Self {
+        self.layer(Layer::Relative(0))
+    }
+    fn z_10(self) -> Self {
+        self.layer(Layer::Relative(10))
+    }
+    fn z_20(self) -> Self {
+        self.layer(Layer::Relative(20))
+    }
+    fn z_30(self) -> Self {
+        self.layer(Layer::Relative(30))
+    }
+    fn z_40(self) -> Self {
+        self.layer(Layer::Relative(40))
+    }
+    fn z_50(self) -> Self {
+        self.layer(Layer::Relative(50))
+    }
+    fn z_neg_10(self) -> Self {
+        self.layer(Layer::Relative(-10))
+    }
+    fn z_neg_20(self) -> Self {
+        self.layer(Layer::Relative(-20))
+    }
+    fn z_overlay(self) -> Self {
+        self.layer(Layer::Overlay)
+    }
+    fn z_overlay_level(self, level: u8) -> Self {
+        self.layer(Layer::OverlayLevel(level))
+    }
+
+    // ---- border ----
+    //
+    // `.border(..)` replaces the whole `Option<Border>` (matches the
+    // `Style::border` field). Width, color, and alignment helpers create
+    // a default border if none exists yet, so the order in the chain
+    // doesn't matter:
+    //
+    // ```ignore
+    // div().border_2().border_color(gray_200())
+    // // same result as
+    // div().border_color(gray_200()).border_2()
+    // ```
+
+    /// Replace the border wholesale (matches the `Style::border` field).
+    fn border(mut self, border: impl Into<Option<Border>>) -> Self {
+        self.get_style().border = border.into();
+        self
+    }
+
+    /// Remove the border entirely (`border: None`). For "0px width but
+    /// still a border object" use [`border_0`](StyledExt::border_0).
+    fn border_none(mut self) -> Self {
+        self.get_style().border = None;
+        self
+    }
+
+    // ---- width (all sides) ----
+
+    /// 0px border (Tailwind `border-0`).
+    fn border_0(self) -> Self {
+        self.border_width(0.0)
+    }
+
+    /// 1px border (Tailwind `border`).
+    fn border_1(self) -> Self {
+        self.border_width(1.0)
+    }
+
+    /// 2px border (Tailwind `border-2`).
+    fn border_2(self) -> Self {
+        self.border_width(2.0)
+    }
+
+    /// 4px border (Tailwind `border-4`).
+    fn border_4(self) -> Self {
+        self.border_width(4.0)
+    }
+
+    /// 8px border (Tailwind `border-8`).
+    fn border_8(self) -> Self {
+        self.border_width(8.0)
+    }
+
+    // ---- width (per side) ----
+
+    /// Top border with the given width (Tailwind `border-t`).
+    fn border_t(mut self, width: impl Into<f32>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.top = width.into();
+        self
+    }
+
+    /// Right border with the given width (Tailwind `border-r`).
+    fn border_r(mut self, width: impl Into<f32>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.right = width.into();
+        self
+    }
+
+    /// Bottom border with the given width (Tailwind `border-b`).
+    fn border_b(mut self, width: impl Into<f32>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.bottom = width.into();
+        self
+    }
+
+    /// Left border with the given width (Tailwind `border-l`).
+    fn border_l(mut self, width: impl Into<f32>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.left = width.into();
+        self
+    }
+
+    /// Left + right border with the given width (Tailwind `border-x`).
+    fn border_x(mut self, width: impl Into<f32>) -> Self {
+        let w = width.into();
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.left = w;
+        border.width.right = w;
+        self
+    }
+
+    /// Top + bottom border with the given width (Tailwind `border-y`).
+    fn border_y(mut self, width: impl Into<f32>) -> Self {
+        let w = width.into();
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width.top = w;
+        border.width.bottom = w;
+        self
+    }
+
+    /// Set the whole [`BorderWidth`] at once (per-side widths).
+    fn border_width(mut self, width: impl Into<BorderWidth>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.width = width.into();
+        self
+    }
+
+    // ---- color ----
+
+    /// Set the border color (Tailwind `border-{color}`). Creates a
+    /// 1px border if none exists.
+    fn border_color(mut self, color: StyledColor) -> Self {
+        let style = self.get_style();
+        let border = style.border.get_or_insert_with(|| Border::new().width(1.0));
+        border.fill = color.into();
+        self
+    }
+
+    // ---- alignment (freya-specific, no Tailwind equivalent) ----
+
+    /// Border drawn inside the element's bounds (`BorderAlignment::Inner`).
+    fn border_inner(self) -> Self {
+        self.border_alignment(BorderAlignment::Inner)
+    }
+
+    /// Border drawn outside the element's bounds (`BorderAlignment::Outer`).
+    fn border_outer(self) -> Self {
+        self.border_alignment(BorderAlignment::Outer)
+    }
+
+    /// Border centered on the element's edge (`BorderAlignment::Center`).
+    fn border_center(self) -> Self {
+        self.border_alignment(BorderAlignment::Center)
+    }
+
+    /// Set how the border is aligned to the element's edge.
+    fn border_alignment(mut self, alignment: impl Into<BorderAlignment>) -> Self {
+        let style = self.get_style();
+        let border = style
+            .border
+            .get_or_insert_with(|| Border::new().fill(black()));
+        border.alignment = alignment.into();
+        self
     }
 
     // ---- variants (pseudo-state style patches) ----

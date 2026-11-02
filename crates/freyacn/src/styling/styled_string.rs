@@ -19,6 +19,11 @@
 //! part of the same grammar; they write to `Style`'s image fields, so variants
 //! work on them too (`hover:blur-md`).
 //!
+//! Layer classes: `z-10`, `-z-10`, `z-[5]`, `z-auto`, `z-overlay`, `z-overlay-3`.
+//! These map to Freya's `Layer`, which is relative to the *parent's* layer
+//! (not a global CSS z-index). Use `z-overlay` / `z-overlay-N` for modals and
+//! dropdowns that must escape their ancestors.
+//!
 //! Unknown classes are ignored (and reported on stderr in debug builds).
 //! Stacked variants such as `hover:focus:bg-red-500` are not supported.
 
@@ -28,7 +33,7 @@ use crate::styling::styled::StyledExt;
 use freya_core::data::Overflow;
 use freya_core::elements::image::{AspectRatio, ImageCover, SamplingMode};
 use freya_core::prelude::{
-    CursorIcon, FontFeature, FontSlant, FontWeight, FontWidth, TextAlign, TextDecoration,
+    CursorIcon, FontFeature, FontSlant, FontWeight, FontWidth, Layer, TextAlign, TextDecoration,
     TextOverflow, TransformOrigin,
 };
 use std::borrow::Cow;
@@ -286,6 +291,8 @@ enum Op {
     Absolute,
     Relative,
     Truncate,
+    // ---- layer (z-index) ----
+    Layer(Layer),
     // ---- image ----
     ObjectFit(AspectRatio),
     ObjectScaleDown,
@@ -300,7 +307,7 @@ impl Op {
         matches!(self, Op::Tracking(_))
     }
 
-    /// Handles a leading `-` (`-mt-4`, `-rotate-45`, `-scale-50`).
+    /// Handles a leading `-` (`-mt-4`, `-rotate-45`, `-scale-50`, `-z-10`).
     fn negated(self) -> Option<Op> {
         Some(match self {
             Op::Margin(s, v) => Op::Margin(s, -v),
@@ -308,6 +315,7 @@ impl Op {
             Op::Scale(v) => Op::Scale(-v),
             Op::ScaleX(v) => Op::ScaleX(-v),
             Op::ScaleY(v) => Op::ScaleY(-v),
+            Op::Layer(Layer::Relative(n)) => Op::Layer(Layer::Relative(-n)),
             _ => return None,
         })
     }
@@ -402,6 +410,7 @@ impl Op {
             Op::Absolute => t.absolute(),
             Op::Relative => t.relative(),
             Op::Truncate => t.truncate(),
+            Op::Layer(l) => t.layer(l),
             Op::ObjectFit(a) => t.object_fit(a),
             Op::ObjectScaleDown => t.object_scale_down(),
             Op::ObjectPosition(p) => t.object_position(p),
@@ -978,6 +987,7 @@ fn parse_base(c: &str) -> Option<Op> {
         "tracking" => tracking(v),
         "leading" => leading(v),
         "cursor" => cursor(v),
+        "z" => z_index(v),
         "overflow" => match v {
             "hidden" | "clip" => Some(Op::Overflow(Overflow::Clip)),
             "visible" => Some(Op::Overflow(Overflow::None)),
@@ -1087,6 +1097,29 @@ fn backdrop_blur(v: &str) -> Option<Op> {
         "3xl" => 64.0,
         other => arbitrary_px(other)?,
     }))
+}
+
+/// Everything after `z-`: a number, `[n]`, `auto`, `overlay` or `overlay-N`.
+///
+/// Numbers become `Layer::Relative`, which is relative to the parent's layer.
+fn z_index(v: &str) -> Option<Op> {
+    match v {
+        "auto" => return Some(Op::Layer(Layer::Relative(0))),
+        "overlay" => return Some(Op::Layer(Layer::Overlay)),
+        _ => {}
+    }
+    if let Some(level) = v.strip_prefix("overlay-") {
+        let n = plain_num(level)?;
+        if n.fract() != 0.0 {
+            return None;
+        }
+        return Some(Op::Layer(Layer::OverlayLevel(n as u8)));
+    }
+    let n = plain_num(v).or_else(|| arbitrary(v).and_then(plain_num))?;
+    if n.fract() != 0.0 {
+        return None;
+    }
+    Some(Op::Layer(Layer::Relative(n as i16)))
 }
 
 /// Everything after `text-`: size, alignment, overflow, or color.
@@ -1300,6 +1333,21 @@ mod tests {
     #[test]
     fn image_classes_work_in_variants() {
         assert!(!StyledString::parse("hover:blur-md").is_empty());
+    }
+
+    #[test]
+    fn z_index_classes() {
+        assert_eq!(s("z-10").layer, Layer::Relative(10));
+        assert_eq!(s("-z-10").layer, Layer::Relative(-10));
+        assert_eq!(s("z-[5]").layer, Layer::Relative(5));
+        assert_eq!(s("z-auto").layer, Layer::Relative(0));
+        assert_eq!(s("z-overlay").layer, Layer::Overlay);
+        assert_eq!(s("z-overlay-3").layer, Layer::OverlayLevel(3));
+    }
+
+    #[test]
+    fn z_index_works_in_variants() {
+        assert!(!StyledString::parse("hover:z-50").is_empty());
     }
 
     #[test]

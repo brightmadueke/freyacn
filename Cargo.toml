@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/freyacn", "crates/freyacn-macros", "crates/freyacn-cli"]
+members = ["crates/freyacn", "crates/freyacn-macros", "crates/freyacn-cli", "crates/freyacn-shadcn", "crates/freyacn-mmaterial3"]
 
 [workspace.package]
 version = "0.2.1"

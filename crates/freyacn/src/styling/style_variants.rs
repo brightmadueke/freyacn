@@ -70,6 +70,10 @@ impl StyleVariants {
         sorted.dedup();
         sorted.into_iter().fold(style, |s, k| self.apply(k, s))
     }
+
+    pub fn has(&self, kind: StyleVariant) -> bool {
+        self.entries.iter().any(|(k, _)| *k == kind)
+    }
 }
 
 impl fmt::Debug for StyleVariants {
