@@ -1,0 +1,274 @@
+{
+  "$schema": "https://github.com/brightmadueke/freyacn/themes-registry/theme.schema.json",
+  "id": "one-dark",
+  "name": "One Dark",
+  "appearance": "dark",
+  "version": "1.0.0",
+  "author": "Atom / GitHub",
+  "palette": {
+    "onedark.bg": "#282c34",
+    "onedark.fg": "#abb2bf",
+    "onedark.panel": "#21252b",
+    "onedark.blue": "#61afef",
+    "onedark.secondary": "#353b45",
+    "onedark.muted": "#2c313a",
+    "onedark.mutedForeground": "#939aa8",
+    "onedark.border": "#3e4451",
+    "onedark.red": "#e06c75",
+    "onedark.green": "#98c379",
+    "onedark.yellow": "#e5c07b",
+    "onedark.cyan": "#56b6c2",
+    "onedark.magenta": "#c678dd",
+    "onedark.disabled": "#5c6370"
+  },
+  "semantic": {
+    "background": "{onedark.bg}",
+    "foreground": "{onedark.fg}",
+    "card": "{onedark.panel}",
+    "cardForeground": "{onedark.fg}",
+    "popover": "{onedark.panel}",
+    "popoverForeground": "{onedark.fg}",
+    "primary": "{onedark.blue}",
+    "primaryForeground": "{onedark.panel}",
+    "secondary": "{onedark.secondary}",
+    "secondaryForeground": "{onedark.fg}",
+    "muted": "{onedark.muted}",
+    "mutedForeground": "{onedark.mutedForeground}",
+    "accent": "{onedark.border}",
+    "accentForeground": "{onedark.fg}",
+    "destructive": "{onedark.red}",
+    "destructiveForeground": "{onedark.panel}",
+    "success": "{onedark.green}",
+    "successForeground": "{onedark.panel}",
+    "warning": "{onedark.yellow}",
+    "warningForeground": "{onedark.panel}",
+    "info": "{onedark.cyan}",
+    "infoForeground": "{onedark.panel}",
+    "border": "{onedark.border}",
+    "input": "{onedark.border}",
+    "ring": "{onedark.blue}",
+    "disabled": "transparent",
+    "disabledForeground": "{onedark.disabled}",
+    "placeholder": "{onedark.disabled}",
+    "link": "{onedark.blue}",
+    "linkHover": "#82c0f2",
+    "sidebar": "{onedark.panel}",
+    "sidebarForeground": "{onedark.fg}",
+    "sidebarPrimary": "{onedark.blue}",
+    "sidebarPrimaryForeground": "{onedark.panel}",
+    "sidebarAccent": "{onedark.muted}",
+    "sidebarAccentForeground": "{onedark.fg}",
+    "sidebarBorder": "{onedark.border}",
+    "sidebarRing": "{onedark.blue}",
+    "chart1": "{onedark.blue}",
+    "chart2": "{onedark.green}",
+    "chart3": "{onedark.yellow}",
+    "chart4": "{onedark.magenta}",
+    "chart5": "{onedark.red}"
+  },
+  "list": {
+    "background": "{semantic.background}",
+    "border": "{semantic.border}",
+    "rowBackground": "{semantic.background}",
+    "rowHover": "{semantic.muted}",
+    "rowSelected": "{semantic.accent}",
+    "rowActive": "{semantic.accent}",
+    "rowForeground": "{semantic.foreground}",
+    "rowSelectedForeground": "{semantic.accentForeground}",
+    "rowDisabledForeground": "{semantic.disabledForeground}",
+    "rowHeight": 36,
+    "rowPaddingX": 12,
+    "rowPaddingY": 8,
+    "radius": 6,
+    "gap": 2
+  },
+  "menu": {
+    "background": "{semantic.popover}",
+    "border": "{semantic.border}",
+    "itemHover": "{semantic.muted}",
+    "itemSelected": "{semantic.accent}",
+    "itemForeground": "{semantic.popoverForeground}",
+    "separator": "{semantic.border}",
+    "radius": 6,
+    "itemPaddingX": 10,
+    "itemPaddingY": 6
+  },
+  "table": {
+    "background": "{semantic.card}",
+    "border": "{semantic.border}",
+    "headerBackground": "{semantic.muted}",
+    "headerForeground": "{semantic.mutedForeground}",
+    "rowHover": "{semantic.accent}",
+    "rowSelected": "{semantic.accent}",
+    "cellPaddingX": 12,
+    "cellPaddingY": 8,
+    "radius": 6
+  },
+  "components": {
+    "button": {
+      "primary": {
+        "background": "{semantic.primary}",
+        "foreground": "{semantic.primaryForeground}",
+        "radius": "md"
+      },
+      "secondary": {
+        "background": "{semantic.secondary}",
+        "foreground": "{semantic.secondaryForeground}",
+        "radius": "md"
+      },
+      "destructive": {
+        "background": "{semantic.destructive}",
+        "foreground": "{semantic.destructiveForeground}",
+        "radius": "md"
+      },
+      "ghost": {
+        "foreground": "{semantic.foreground}",
+        "hover": {
+          "background": "{semantic.accent}",
+          "foreground": "{semantic.accentForeground}"
+        }
+      }
+    },
+    "input": {
+      "background": "{semantic.background}",
+      "foreground": "{semantic.foreground}",
+      "placeholder": "{semantic.placeholder}",
+      "border": "{semantic.input}",
+      "focus": {
+        "border": "{semantic.ring}"
+      },
+      "radius": "md"
+    }
+  },
+  "radius": {
+    "none": 0,
+    "xs": 2,
+    "sm": 4,
+    "md": 6,
+    "lg": 8,
+    "xl": 12,
+    "2xl": 16,
+    "3xl": 24,
+    "4xl": 32,
+    "full": 9999,
+    "default": 6
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "2xl": 24,
+    "3xl": 32
+  },
+  "typography": {
+    "fontFamily": {
+      "sans": "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
+      "serif": "ui-serif, Georgia, Cambria, Times New Roman, Times, serif",
+      "mono": "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
+    },
+    "fontSize": {
+      "xs": [
+        12,
+        16
+      ],
+      "sm": [
+        14,
+        20
+      ],
+      "md": [
+        16,
+        24
+      ],
+      "base": [
+        16,
+        24
+      ],
+      "lg": [
+        18,
+        28
+      ],
+      "xl": [
+        20,
+        28
+      ],
+      "2xl": [
+        24,
+        32
+      ],
+      "3xl": [
+        30,
+        36
+      ],
+      "4xl": [
+        36,
+        40
+      ],
+      "5xl": [
+        48,
+        48
+      ],
+      "6xl": [
+        60,
+        60
+      ],
+      "7xl": [
+        72,
+        72
+      ],
+      "8xl": [
+        96,
+        96
+      ],
+      "9xl": [
+        128,
+        128
+      ]
+    },
+    "fontWeight": {
+      "thin": 100,
+      "extralight": 200,
+      "light": 300,
+      "normal": 400,
+      "base": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700,
+      "extrabold": 800,
+      "black": 900
+    }
+  },
+  "zIndex": {
+    "-20": -20,
+    "-10": -10,
+    "0": 0,
+    "10": 10,
+    "20": 20,
+    "30": 30,
+    "40": 40,
+    "50": 50,
+    "overlay": 1000
+  },
+  "motion": {
+    "duration": {
+      "fast": 150,
+      "normal": 250,
+      "slow": 400
+    },
+    "easing": {
+      "standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "decelerate": "cubic-bezier(0, 0, 0.2, 1)",
+      "accelerate": "cubic-bezier(0.4, 0, 1, 1)"
+    }
+  },
+  "shadows": {
+    "xs": "0 1px 2px 0 rgba(0, 0, 0, 0.3)",
+    "sm": "0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4)",
+    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4)",
+    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4)",
+    "xl": "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
+    "2xl": "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
+    "inner": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.3)"
+  }
+}

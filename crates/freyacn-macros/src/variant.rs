@@ -90,7 +90,7 @@ pub fn parse_variant(_attr: TokenStream2, item: TokenStream2) -> syn::Result<Tok
             fn resolve(&self) -> ::freyacn::prelude::Style {
                 let s =
                     <::freyacn::prelude::Style as ::core::default::Default>::default();
-                ::freyacn::prelude::StyleExt::style(s, self.style_str())
+                ::freyacn::prelude::StyledExt::style(s, self.style_str())
             }
         }
 

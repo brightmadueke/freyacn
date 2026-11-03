@@ -441,7 +441,7 @@
 //!   (`use_viewport_size()` + conditionals), not in the style vocabulary.
 //! - **Group / peer variants** (`group-hover`, `peer-checked`). These need
 //!   shared ancestor state that doesn't fit per-element `StyleVariants`.
-// - **Descendant / sibling combinators.** Same reason.
+//! - **Descendant / sibling combinators.** Same reason.
 //! - **Transitions / animations.** A separate layer; the natural extension
 //!   point is to interpolate between two applied snapshots.
 //! - **Outline offset rings** (Tailwind's `ring`). `Style::border` gives
@@ -536,7 +536,36 @@ pub mod elements;
 pub mod styling;
 pub mod theme;
 pub mod utils;
-mod variants;
+pub mod variants;
+
+/// Bundled default themes.
+///
+/// Enabled by the `themes` feature. Each constant is the raw JSON of a
+/// theme file compiled into the binary via `include_str!`, so
+/// `use_init_theme_registry(themes::DEFAULT_DARK)` works without shipping
+/// a `themes/` directory alongside your app.
+///
+/// # Layout
+///
+/// The JSON files live at `<crate-root>/themes/` and are referenced here
+/// with `include_str!("../themes/<name>.json")`. If you rename or move
+/// them, update the paths below.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use freyacn::prelude::*;
+///
+/// let handle = use_init_theme_registry(freyacn_core::themes::DEFAULT_DARK);
+/// ```
+#[cfg(feature = "themes")]
+pub mod themes {
+    /// FreyaCN Light — the shipped default light theme.
+    pub const DEFAULT_LIGHT: &str = include_str!("../themes/default-light.json");
+
+    /// FreyaCN Dark — the shipped default dark theme.
+    pub const DEFAULT_DARK: &str = include_str!("../themes/default-dark.json");
+}
 
 /// Everything you need to build a FreyaCN UI.
 ///
@@ -550,6 +579,7 @@ mod variants;
 /// - **Theme** — every type from [`crate::theme`].
 /// - **Freya icons** — `lucide` module (not its contents, to avoid
 ///   colliding with `image()` / `radio()` element constructors).
+///   Only present when `icons-lucide` is enabled.
 /// - **Utils** — everything from [`crate::utils`].
 ///
 /// Freya's own prelude is *not* re-exported here; import it explicitly if
@@ -572,6 +602,8 @@ pub mod prelude {
         HasSemanticEvents, InheritedStyle, SemanticEvents, Style, StyleVariant, StyleVariants,
         StyledColor, StyledExt, StyledString, ThemedExt,
     };
+    #[doc(inline)]
+    pub use crate::variants::Variant;
 
     // ---- elements ----
     #[doc(inline)]
@@ -586,10 +618,21 @@ pub mod prelude {
     pub use crate::utils::*;
 
     // ---- Freya icons ----
+    //
+    // `freya::icons::lucide` is only exported when `freya/icons-lucide`
+    // is enabled — i.e. when the `icons-lucide` feature is on (or
+    // `freya_icons_lucide` if you renamed). Gate the re-export so the
+    // prelude doesn't break when only `icons` is enabled.
+    #[cfg(feature = "icons-lucide")]
     #[doc(inline)]
     pub use freya::icons::lucide;
 
-    // ---- Freya event plumbing ----
+    // ---- Freya event & component plumbing ----
+    #[doc(inline)]
+    pub use freya::prelude::{
+        AccessibilityData, AccessibilityExt, ChildrenExt, Component, DiffKey, Element,
+        EventHandlersExt, IntoElement, KeyExt, StyleExt,
+    };
     #[doc(inline)]
     pub use freya_core::element::EventHandlerType;
     #[doc(inline)]
@@ -615,3 +658,16 @@ pub mod base {
     #[doc(inline)]
     pub use freya::prelude::*;
 }
+
+/// Re-export of `freya::icons` at the crate root.
+///
+/// Enabled by the `icons` feature (forwards to `freya/icons`). Gives you
+/// the raw `IconPath` / icon sets freya ships, without going through the
+/// prelude.
+///
+/// ```rust,ignore
+/// use freyacn_core::icons;
+/// ```
+#[cfg(feature = "icons")]
+#[doc(inline)]
+pub use freya::icons;

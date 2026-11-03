@@ -2,26 +2,66 @@
 name = "freyacn_core"
 version.workspace = true
 edition.workspace = true
-description = "Design-system layer for Freya: JSON themes, Tailwind-inspired utilities, and HTML-like elements sharing one style cascade."
-license.workspace = true
-readme.workspace = true
-authors.workspace = true
-repository.workspace = true
-documentation.workspace = true
-keywords.workspace = true
-categories.workspace = true
 
 [features]
-hotreload = ["freya/hotreload"]
+default = ["freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma"]
+
+freya_winit = ["freya/winit"]
+freya_gpu = ["freya/gpu"]
+freya_accessibility = ["freya/accessibility"]
+freya_platform_text_gamma = ["freya/platform-text-gamma"]
+
+freya_router = ["freya/router"]
+freya_i18n = ["freya/i18n"]
+freya_remote_asset = ["freya/remote-asset"]
+freya_tray = ["freya/tray"]
+freya_sdk = ["freya/sdk"]
+freya_sdk_tokio = ["freya_sdk", "freya/sdk-tokio"]
+freya_gif = ["freya/gif"]
+freya_video = ["freya/video"]
+freya_plot = ["freya/plot"]
+freya_material_design = ["freya/material-design"]
+freya_calendar = ["freya/calendar"]
+freya_icons = ["freya/icons"]
+freya_icons_lucide = ["freya_icons", "freya/icons-lucide"]
+freya_radio = ["freya/radio"]
+freya_query = ["freya/query"]
+freya_markdown = ["freya/markdown"]
+freya_html = ["freya/html"]
+freya_titlebar = ["freya/titlebar"]
+freya_borderless = ["freya/borderless"]
+freya_terminal = ["freya/terminal"]
+freya_terminal_pty = ["freya_terminal", "freya/terminal-pty"]
+freya_code_editor = ["freya/code-editor"]
+freya_camera = ["freya/camera"]
+freya_web = ["freya/web"]
+
+freya_devtools = ["freya/devtools"]
+freya_metrics = ["freya/metrics"]
+freya_hotpath = ["freya/hotpath"]
+freya_hotreload = ["freya/hotreload"]
+freya_zoom_shortcuts = ["freya/zoom-shortcuts"]
+
+freya_all = [
+    "freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma",
+    "freya_router", "freya_i18n", "freya_remote_asset", "freya_tray", "freya_sdk", "freya_sdk_tokio",
+    "freya_gif", "freya_video", "freya_plot", "freya_material_design", "freya_calendar",
+    "freya_icons", "freya_icons_lucide", "freya_radio", "freya_query", "freya_markdown", "freya_html",
+    "freya_titlebar", "freya_borderless", "freya_terminal", "freya_terminal_pty",
+    "freya_code_editor", "freya_camera", "freya_web",
+    "freya_devtools", "freya_metrics", "freya_hotpath", "freya_hotreload", "freya_zoom_shortcuts",
+]
+
+all = ["freya_all", ]
 
 [dependencies]
-freya = { version = "0.5.0-rc.13", features = ["icons", "engine"] }
+freya = { version = "0.5.0-rc.13", default-features = false }
 freya-core = "0.5.0-rc.13"
-freya-icons = { version = "0.5.0-rc.10", features = ["lucide"] }
-freyacn_macros.workspace = true
+freya-engine = "0.5.0-rc.13"
 paste = "1.0.15"
 rustc-hash = "2.1.3"
 torin = "0.5.0-rc.13"
 serde = "1.0.229"
 serde_json = "1.0.154"
 ureq = "3.5.0"
+freya-icons = { version = "0.4.3", features = ["lucide"] }

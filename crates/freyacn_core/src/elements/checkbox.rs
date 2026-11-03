@@ -3,7 +3,6 @@ use crate::styling::colors::{blue_600, gray_100};
 use crate::styling::semantic_events::{HasSemanticEvents, SemanticEvents};
 use crate::styling::{Style, StyledColor, StyledExt, white};
 use freya::components::SvgViewer;
-use freya::icons::lucide;
 use freya::prelude::*;
 use freya_core::diff_key::DiffKey;
 use freya_core::element::{Element, IntoElement};
@@ -11,6 +10,7 @@ use freya_core::integration::{
     AccessibilityData, AccessibilityExt, ChildrenExt, ComponentKey, EventHandlersExt, KeyExt,
 };
 use freya_core::prelude::{Component, EventHandlers};
+use freya_icons::lucide;
 
 const DEFAULT_SIZE: f32 = 16.0;
 

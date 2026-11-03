@@ -150,9 +150,9 @@ impl HasSemanticEvents for Image {
 // ─── Loading (unchanged) ────────────────────────────────────────────────
 
 fn decode(bytes: Bytes) -> Option<ImageHandle> {
-    use freya::engine::prelude::{SkData, SkImage};
-    let data = SkData::new_copy(&bytes);
-    let img = SkImage::from_encoded(data)?;
+    use freya_engine::prelude::{Data, SkImage};
+    let data = unsafe { Data::new_bytes(&bytes) };
+    let img = SkImage::from_encoded(&data)?;
     Some(ImageHandle::new(img, bytes))
 }
 

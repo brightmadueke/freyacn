@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/freyacn_core", "crates/freyacn-macros", "crates/freyacn-cli", "crates/freyacn-shadcn", "crates/freyacn-material3"]
+members = ["crates/freyacn_core", "crates/freyacn-macros", "crates/freyacn-cli", "crates/freyacn-shadcn", "crates/freyacn-material3", "crates/freyacn"]
 
 [workspace.package]
 version = "0.2.2"
@@ -15,3 +15,6 @@ categories = ["gui", "development-tools"]
 
 [workspace.dependencies]
 freyacn_macros = { version = "0.2.2", path = "crates/freyacn-macros" }
+freyacn_core = { version = "0.2.2", path = "crates/freyacn_core" }
+freyacn-shadcn = { version = "0.2.2", path = "crates/freyacn-shadcn" }
+freyacn-material3 = { version = "0.2.2", path = "crates/freyacn-material3" }

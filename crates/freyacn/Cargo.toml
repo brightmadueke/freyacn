@@ -1,0 +1,76 @@
+[package]
+name = "freyacn"
+version.workspace = true
+edition.workspace = true
+description = "A Tailwind-inspired design system, styling, and JSON theming layer for Freya UIs."
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma"]
+
+freya_winit = ["freyacn_core/freya_winit"]
+freya_gpu = ["freyacn_core/freya_gpu"]
+freya_accessibility = ["freyacn_core/freya_accessibility"]
+freya_platform_text_gamma = ["freyacn_core/freya_platform_text_gamma"]
+
+freya_router = ["freyacn_core/freya_router"]
+freya_i18n = ["freyacn_core/freya_i18n"]
+freya_remote_asset = ["freyacn_core/freya_remote_asset"]
+freya_tray = ["freyacn_core/freya_tray"]
+freya_sdk = ["freyacn_core/freya_sdk"]
+freya_sdk_tokio = ["freyacn_core/freya_sdk_tokio"]
+freya_gif = ["freyacn_core/freya_gif"]
+freya_video = ["freyacn_core/freya_video"]
+freya_plot = ["freyacn_core/freya_plot"]
+freya_material_design = ["freyacn_core/freya_material_design"]
+freya_calendar = ["freyacn_core/freya_calendar"]
+freya_icons = ["freyacn_core/freya_icons"]
+freya_icons_lucide = ["freyacn_core/freya_icons_lucide"]
+freya_radio = ["freyacn_core/freya_radio"]
+freya_query = ["freyacn_core/freya_query"]
+freya_markdown = ["freyacn_core/freya_markdown"]
+freya_html = ["freyacn_core/freya_html"]
+freya_titlebar = ["freyacn_core/freya_titlebar"]
+freya_borderless = ["freyacn_core/freya_borderless"]
+freya_terminal = ["freyacn_core/freya_terminal"]
+freya_terminal_pty = ["freyacn_core/freya_terminal_pty"]
+freya_code_editor = ["freyacn_core/freya_code_editor"]
+freya_camera = ["freyacn_core/freya_camera"]
+freya_web = ["freyacn_core/freya_web"]
+
+freya_devtools = ["freyacn_core/freya_devtools"]
+freya_metrics = ["freyacn_core/freya_metrics"]
+freya_hotpath = ["freyacn_core/freya_hotpath"]
+freya_hotreload = ["freyacn_core/freya_hotreload"]
+freya_zoom_shortcuts = ["freyacn_core/freya_zoom_shortcuts"]
+shadcn = ["dep:freyacn-shadcn"]
+material3 = ["dep:freyacn-material3"]
+freya_all = ["freyacn_core/freya_all"]
+
+all = [
+    "freya_all",
+    "shadcn",
+    "material3",
+]
+
+full = [
+    "freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma",
+    "freya_router", "freya_i18n", "freya_remote_asset", "freya_tray", "freya_sdk", "freya_sdk_tokio",
+    "freya_gif", "freya_video", "freya_plot", "freya_material_design", "freya_calendar",
+    "freya_icons", "freya_icons_lucide", "freya_radio", "freya_query", "freya_markdown", "freya_html",
+    "freya_titlebar", "freya_borderless", "freya_terminal", "freya_terminal_pty",
+    "freya_code_editor", "freya_camera", "freya_web", "freya_zoom_shortcuts",
+    "shadcn", "material3",
+]
+
+[dependencies]
+freyacn_core = { workspace = true }
+freyacn_macros = { workspace = true }
+freyacn-shadcn = { workspace = true, optional = true }
+freyacn-material3 = { workspace = true, optional = true }

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://github.com/brightmadueke/themes-registry/theme.schema.json",
+  "$schema": "https://github.com/brightmadueke/freyacn/themes-registry/theme.schema.json",
   "id": "default-light",
   "name": "FreyaCN Light",
   "appearance": "light",

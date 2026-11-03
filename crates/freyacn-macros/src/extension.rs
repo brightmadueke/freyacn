@@ -12,7 +12,7 @@ use syn::{Error, Fields, Ident, ItemStruct, LitStr, Token, punctuated::Punctuate
 const SUPPORTED: &[&str] = &[
     "children",
     "key",
-    "style",
+    "styled",
     "event_handlers",
     "accessibility",
 ];
@@ -52,7 +52,7 @@ pub fn field_names_for(name: &str) -> &'static [&'static str] {
     match name {
         "children" => &["children"],
         "key" => &["key"],
-        "style" => &["style"],
+        "styled" => &["styled"],
         "event_handlers" => &["event_handlers"],
         "accessibility" => &["accessibility"],
         _ => &[],
@@ -140,7 +140,7 @@ fn extension_for(
         //
         // If neither a base style nor variants are declared, the local
         // binding is just `&self.style` — a cheap fast path with no merge.
-        "style" => {
+        "styled" => {
             let has_base = base_style.is_some();
             let has_variants = !variant_field_names.is_empty();
 
@@ -198,7 +198,7 @@ fn extension_for(
                 }],
                 locals,
                 impls: vec![quote! {
-                    impl ::freyacn::prelude::StyleExt for #struct_name {
+                    impl ::freyacn::prelude::StyledExt for #struct_name {
                         fn get_style(&mut self) -> &mut ::freyacn::prelude::Style {
                             &mut self.style
                         }
