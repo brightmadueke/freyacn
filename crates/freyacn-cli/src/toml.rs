@@ -64,13 +64,21 @@ pub struct Dependencies {
     pub required: Vec<String>,
 }
 
-fn default_preset() -> String { "neutral".into() }
-fn default_icons() -> String { "freyacn_core-icons".into() }
-fn default_style() -> String { "freyacn_core-default".into() }
-fn default_true() -> bool { true }
+fn default_preset() -> String {
+    "neutral".into()
+}
+fn default_icons() -> String {
+    "freyacn-core-icons".into()
+}
+fn default_style() -> String {
+    "freyacn-core-default".into()
+}
+fn default_true() -> bool {
+    true
+}
 
 pub fn load() -> anyhow::Result<Config> {
-    let text = std::fs::read_to_string("freyacn_core.toml")?;
+    let text = std::fs::read_to_string("freyacn-core.toml")?;
     let config: Config = toml::from_str(&text)?;
     Ok(config)
 }

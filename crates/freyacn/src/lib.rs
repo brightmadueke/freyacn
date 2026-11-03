@@ -1,6 +1,3 @@
-//! > ⚠️ **Pre-release.** The public API is not yet stable. Breaking
-//! > changes may land in any `0.x` release.
-//!
 //! # FreyaCN
 //!
 //! **Targets Freya `0.5.0-rc.13`.**
@@ -8,16 +5,20 @@
 //! **FreyaCN** is a unified design-system, styling, and theming layer for
 //! [Freya](https://github.com/marc2332/freya) desktop UIs. It combines:
 //!
-//! - **Theming** — JSON theme files defining colors, spacing, radius,
+//! - **Theming** — JSON theme files defining colours, spacing, radius,
 //!   typography, motion, shadows, and z-indices. Swap the theme at
-//!   runtime with zero rebuilds.
+//!   runtime with zero rebuilds. Tokens are camelCase in the JSON
+//!   (`primaryForeground`) and kebab-case in class strings
+//!   (`text-primary-foreground`); the parser bridges both spellings.
 //! - **Styling** — A Tailwind-inspired utility vocabulary available both
 //!   as fluent builder methods (`Style::default().bg(blue_500()).p_4()`)
 //!   and as parsed class strings
-//!   (`.style("bg-blue-500 p-4 hover:bg-blue-700")`).
+//!   (`.style("bg-primary p-4 hover:bg-primary/90")`). Supports theme
+//!   tokens, the full `aria-*` variant family, `ring-*` utilities
+//!   (mapped onto the border), and arbitrary bracketed values.
 //! - **Elements** — Pre-built HTML-like primitives (`div`, `text`, `p`,
-//!   `image`, `button`, `checkbox`, `radio`, `input`) wired to a shared
-//!   style cascade.
+//!   `image`, `icon`, `button`, `checkbox`, `radio`, `input`) wired to
+//!   a shared style cascade.
 //! - **Procedural Macros** — Ergonomic component generation
 //!   (`#[component]`), enum-based styling variants (`#[variant]`), and
 //!   extension bundles (`#[extensions]`).
@@ -25,7 +26,7 @@
 //!   joining.
 //!
 //! This crate — **`freyacn`** — is the primary facade for the FreyaCN
-//! ecosystem. It re-exports functionality from `freyacn_core` and
+//! ecosystem. It re-exports functionality from `freyacn-core` and
 //! `freyacn_macros`, plus optional sibling crates (`freyacn-shadcn`,
 //! `freyacn-material3`) and any `freya` feature enabled via its own
 //! features.
@@ -35,7 +36,7 @@
 //! # Cargo features
 //!
 //! Every `freya_*` feature forwards straight through to `freya` via
-//! `freyacn_core`. Enable them individually for fine-grained control, or
+//! `freyacn-core`. Enable them individually for fine-grained control, or
 //! use one of the bundles.
 //!
 //! | Feature | Enables |
@@ -84,15 +85,14 @@
 //! ```rust,no_run
 //! extern crate freyacn;
 //! use freyacn::prelude::*;
+//! use freyacn::icons::lucide;
 //!
-//! #[component]
-//! fn ActionButton(
-//!     #[struct_fields(children)]
-//!     label: String,
-//! ) {
+//! #[component(ext(children))]
+//! fn ActionButton(label: String) {
 //!     button()
 //!         .style("px-4 py-2 rounded-md bg-primary text-primary-foreground")
-//!         .child(text(label))
+//!         .children(children.clone())
+//!         .child(text(label.clone()))
 //! }
 //!
 //! fn App() {
@@ -102,7 +102,8 @@
 //!         .bg_background()
 //!         .text_foreground()
 //!         .p_6()
-//!         .child(ActionButton().label("Continue".into()))
+//!         .child(icon(lucide::check()).size(16.0))
+//!         .child(ActionButton().label("Continue"))
 //! }
 //! ```
 //!
@@ -124,6 +125,8 @@ pub use freyacn_core::base;
 #[doc(inline)]
 pub use freyacn_core::cn;
 #[doc(inline)]
+pub use freyacn_core::component_variants;
+#[doc(inline)]
 pub use freyacn_core::elements;
 #[doc(inline)]
 pub use freyacn_core::styling;
@@ -131,8 +134,6 @@ pub use freyacn_core::styling;
 pub use freyacn_core::theme;
 #[doc(inline)]
 pub use freyacn_core::utils;
-#[doc(inline)]
-pub use freyacn_core::variants;
 
 // ---------------------------------------------------------------------
 // Procedural macros
@@ -167,12 +168,12 @@ pub use freyacn_core::theme::load_theme_registry as use_init_theme_registry;
 
 #[doc(inline)]
 pub use freyacn_core::elements::{
-    Button, Checkbox, Div, Image, Input, Paragraph, Radio, Text, button, checkbox, div, image,
-    input, p, radio, text,
+    Button, Checkbox, Div, Icon, Image, Input, Paragraph, Radio, Text, button, checkbox, div, icon,
+    image, input, p, radio, text,
 };
 
 #[doc(inline)]
-pub use freyacn_core::variants::Variant;
+pub use freyacn_core::component_variants::ComponentVariant;
 
 // ---------------------------------------------------------------------
 // Feature-gated preset re-exports
@@ -216,7 +217,7 @@ pub use freyacn_material3 as material3;
 // Feature-gated freya module re-exports
 //
 // Each line mirrors a feature in `Cargo.toml`. The RHS is the module path
-// `freyacn_core` already re-exports from `freya`. Nothing here wraps the
+// `freyacn-core` already re-exports from `freya`. Nothing here wraps the
 // upstream module — you get whatever freya exposes, unchanged.
 // ---------------------------------------------------------------------
 
@@ -304,14 +305,20 @@ pub use freyacn_core::tray;
 ///
 /// Included items:
 ///
-/// - **Elements** — `div`, `text`, `button`, `input`, `checkbox`, etc.
+/// - **Elements** — `div`, `text`, `p`, `image`, `icon`, `button`,
+///   `input`, `checkbox`, `radio`, and their types.
 /// - **Styling** — `Style`, `StyledExt`, `StyledString`, `StyledColor`,
-///   `StyleVariant`.
+///   `StyleVariant`, `StyleVariants`.
 /// - **Theming** — `Theme`, `ThemeRegistry`, `ThemeInfo`, `Appearance`,
 ///   `use_cn_theme`, `use_init_theme_registry`.
 /// - **Macros** — `#[component]`, `#[variant]`, `#[extensions]`, and
 ///   `cn!`.
-/// - **Variants** — `Variant` trait for resolving component variants.
+/// - **Variants** — `ComponentVariant` trait for resolving component
+///   variants.
+/// - **Semantic events** — `HasSemanticEvents` for `.on_hover(..)` /
+///   `.on_focus(..)` and the aria-state builders (`.with_aria_invalid(..)`,
+///   `.with_aria_checked(..)`, …) that drive the `aria-*:` class
+///   families.
 /// - **Freya plumbing** — `Element`, `Component`, `DiffKey`, event types.
 ///
 /// **Feature-gated modules** (re-exported by reference, not by contents,
@@ -418,12 +425,13 @@ pub mod prelude {
 
     // ---- Lucide icons (only when the lucide pack is enabled) ----
     //
-    // `freya::icons::lucide` doesn't exist unless `freya/icons-lucide` is
-    // on, so the re-export is gated on `freya_icons_lucide` (which implies
-    // `freya_icons` in `freyacn_core`).
+    // `freyacn_core::icons` = `freya::icons`, so
+    // `freyacn_core::icons::lucide` = `freya::icons::lucide`. Routing
+    // through `freyacn_core` keeps the prelude consistent with the rest
+    // of the facade — no direct `freya::` path leaks here.
     #[cfg(feature = "freya_icons_lucide")]
     #[doc(inline)]
-    pub use freya::icons::lucide;
+    pub use freyacn_core::icons::lucide;
 }
 
 // ---------------------------------------------------------------------
@@ -462,6 +470,15 @@ mod tests {
         assert_eq!(s.padding.top(), 16.0);
         assert_eq!(s.padding.bottom(), 16.0);
         assert_eq!(s.radius.top_left(), 6.0);
+    }
+
+    #[test]
+    fn test_ring_utility() {
+        // `ring-[3px]` maps onto the border in Style. Not a true offset
+        // ring — see `freyacn_core::styling` for the caveat.
+        let s = Style::default().style("ring-[3px]");
+        let border = s.border.expect("ring-[3px] should create a border");
+        assert_eq!(border.width.top, 3.0);
     }
 
     #[test]
@@ -514,6 +531,16 @@ mod tests {
     #[test]
     fn test_element_constructors() {
         let _el = div().p_2().child(text("Hello, FreyaCN!"));
+    }
+
+    #[cfg(feature = "freya_icons")]
+    #[test]
+    fn test_icon_constructor() {
+        // `crate::icons` == `freyacn_core::icons` == `freya::icons`.
+        // `freya` itself is not a direct dependency of this crate — always
+        // go through the `freyacn_core` re-export (which the facade mirrors
+        // at `crate::icons` behind the same feature chain).
+        let _el = icon(crate::icons::lucide::check()).size(16.0);
     }
 
     // ---- Feature-gated smoke tests ----

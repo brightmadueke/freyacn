@@ -1,14 +1,34 @@
 //! The `#[variant]` attribute macro for enums.
 //!
 //! Generates `From<&str>`, `From<String>`, `.style_str()`, `.resolve()`,
-//! and an `impl freyacn_core::Variant` from per-variant `#[variant("…")]`
-//! attributes.
+//! and an `impl freyacn_core::ComponentVariant` from per-variant
+//! `#[variant("…")]` attributes.
+//!
+//! The crate that the generated code refers to is configurable at the
+//! enum level:
+//!
+//! ```ignore
+//! // default — resolves against the `freyacn` facade
+//! #[variant]
+//! pub enum MyVariant { #[variant("…")] A }
+//!
+//! // explicit — use an internal crate instead of the facade
+//! #[variant(freyacn_core)]
+//! pub enum ButtonVariant { #[variant("…")] Default }
+//! ```
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{Error, Ident, ItemEnum, LitStr};
+use syn::{Error, Ident, ItemEnum, LitStr, Path};
 
-pub fn parse_variant(_attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
+pub fn parse_variant(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
+    // ---- Resolve the crate path the expansion should reference. ----
+    let krate: Path = if attr.is_empty() {
+        syn::parse_quote!(::freyacn)
+    } else {
+        syn::parse2(attr)?
+    };
+
     let mut item_enum: ItemEnum = syn::parse2(item)?;
     let enum_ident = item_enum.ident.clone();
 
@@ -75,22 +95,43 @@ pub fn parse_variant(_attr: TokenStream2, item: TokenStream2) -> syn::Result<Tok
                 }
             }
 
-            /// Convenience alias for
-            /// [`Variant::resolve`](freyacn::Variant::resolve).
+            /// Convenience alias for `ComponentVariant::resolve`.
             ///
             /// Lets callers write `v.resolve()` without importing the
-            /// `Variant` trait. Must be called inside a Freya render
+            /// `ComponentVariant` trait. Must be called inside a Freya render
             /// context — reads the active theme.
-            pub fn resolve(&self) -> ::freyacn::prelude::Style {
-                <Self as ::freyacn::prelude::Variant>::resolve(self)
+            pub fn resolve(&self) -> #krate::styling::Style {
+                <Self as #krate::prelude::ComponentVariant>::resolve(self)
             }
         }
 
-        impl ::freyacn::prelude::Variant for #enum_ident {
-            fn resolve(&self) -> ::freyacn::prelude::Style {
-                let s =
-                    <::freyacn::prelude::Style as ::core::default::Default>::default();
-                ::freyacn::prelude::StyledExt::style(s, self.style_str())
+        impl #krate::prelude::ComponentVariant for #enum_ident {
+            fn resolve(&self) -> #krate::styling::Style {
+                // Start from `Style::bare()`, NOT `Style::default()`.
+                //
+                // `Style::default()` seeds every field with a theme value
+                // (`text_color = foreground`, `background = background`,
+                // `font_size`, …). Because `merge_style` treats any field
+                // that differs from `Style::bare()` as "explicitly set",
+                // those seeded values would be copied back when this
+                // `Style` is merged into the component's fold chain,
+                // overwriting whatever the variant's class string actually
+                // set.
+                //
+                // Concretely: `ButtonVariant::Default` sets
+                // `text-primary-foreground`. If `resolve()` returned
+                // `Style::default()`, its `text_color` would be
+                // `theme.foreground` — and merging `ButtonSize::Default`'s
+                // `Style::default()` afterward would copy that back,
+                // overwriting the variant's `text-primary-foreground`.
+                //
+                // Starting from `bare()` means only fields the class
+                // string touches are non-bare, so `merge_style` copies
+                // exactly those fields and leaves theme defaults alone.
+                #krate::styling::StyledExt::style(
+                    #krate::styling::Style::bare(),
+                    self.style_str(),
+                )
             }
         }
 

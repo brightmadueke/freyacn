@@ -1,14 +1,25 @@
 //! The `#[component(...)]` attribute macro.
+//!
+//! The crate that the generated `impl Component` refers to is configurable
+//! via a `crate = <path>` argument. It defaults to `::freyacn` (the facade).
+//!
+//! ```ignore
+//! #[component(props(...), ext(styled))]
+//! fn my_component() -> impl IntoElement { /* ... */ }
+//!
+//! #[component(crate = freyacn_core, props(...), ext(styled))]
+//! fn my_component() -> impl IntoElement { /* ... */ }
+//! ```
 
+use crate::extension;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::{
-    Attribute, Expr, FnArg, Ident, ItemFn, LitStr, Pat, PatType, Token, Type,
+    Attribute, Expr, FnArg, Ident, ItemFn, LitStr, Pat, PatType, Path, Token, Type,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
 };
-
-use crate::extension;
 
 // ---------------------------------------------------------------------------
 // Prop declaration parsing
@@ -62,7 +73,7 @@ impl Parse for PropDecl {
 }
 
 // ---------------------------------------------------------------------------
-// `#[component(props(…), ext(…), variants(…))]`
+// `#[component(crate = …, props(…), ext(…), variants(…))]`
 // ---------------------------------------------------------------------------
 
 struct ComponentArgs {
@@ -71,9 +82,12 @@ struct ComponentArgs {
     variants: Vec<PropDecl>,
     /// Optional leading string literal inside `variants(...)` — e.g.
     /// `variants("p-4 w-3", size: ButtonSize = ButtonSize::Default)`.
-    /// Applied at the bottom of the style merge chain, so variants and
+    /// Applied at the bottom of the styled merge chain, so variants and
     /// user overrides still win.
-    base_style: Option<LitStr>,
+    base_styled: Option<LitStr>,
+    /// Optional crate path the expansion should reference. `None` means
+    /// `::freyacn` (the facade).
+    krate: Option<Path>,
 }
 
 impl Parse for ComponentArgs {
@@ -81,51 +95,75 @@ impl Parse for ComponentArgs {
         let mut props = Vec::new();
         let mut ext = Vec::new();
         let mut variants = Vec::new();
-        let mut base_style: Option<LitStr> = None;
+        let mut base_styled: Option<LitStr> = None;
+        let mut krate: Option<Path> = None;
 
         while !input.is_empty() {
-            let name: Ident = input.parse()?;
-            let content;
-            syn::parenthesized!(content in input);
+            // `crate = path` is the only non-group top-level argument.
+            //
+            // `peek(Token![crate])` does not work here: `Token![crate]`'s
+            // Peek/Parse impls route through `Cursor::ident()`, which filters
+            // out keyword idents. `Ident::parse_any` is backed by
+            // `Cursor::ident_any()`, which *does* surface keyword idents.
+            let is_crate = {
+                let fork = input.fork();
+                fork.call(Ident::parse_any)
+                    .map(|id| id == "crate")
+                    .unwrap_or(false)
+            };
 
-            match name.to_string().as_str() {
-                "props" => {
-                    let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
-                    props.extend(items);
+            if is_crate {
+                let _ = input.call(Ident::parse_any)?; // consume `crate`
+                input.parse::<Token![=]>()?;
+                if krate.is_some() {
+                    return Err(input.error("duplicate `crate = ...` argument"));
                 }
-                "ext" => {
-                    let items = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
-                    ext.extend(items.into_iter().map(|i| i.to_string()));
-                }
-                "variants" => {
-                    // Optional leading base-style string literal.
-                    if content.peek(LitStr) {
-                        let lit: LitStr = content.parse()?;
-                        if base_style.is_some() {
-                            return Err(syn::Error::new_spanned(
-                                &lit,
-                                "duplicate base-style string in `variants(...)`; \
-                                 only one is allowed",
-                            ));
-                        }
-                        base_style = Some(lit);
-                        if !content.is_empty() {
-                            content.parse::<Token![,]>()?;
-                        }
-                    }
-                    if !content.is_empty() {
+                krate = Some(input.parse()?);
+            } else {
+                let name: Ident = input.parse()?;
+                let content;
+                syn::parenthesized!(content in input);
+
+                match name.to_string().as_str() {
+                    "props" => {
                         let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
-                        variants.extend(items);
+                        props.extend(items);
                     }
-                }
-                other => {
-                    return Err(syn::Error::new_spanned(
-                        &name,
-                        format!(
-                            "unknown group `{other}`. \
-                             Expected `props(...)`, `ext(...)`, or `variants(...)`."
-                        ),
-                    ));
+                    "ext" => {
+                        let items = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+                        ext.extend(items.into_iter().map(|i| i.to_string()));
+                    }
+                    "variants" => {
+                        if content.peek(LitStr) {
+                            let lit: LitStr = content.parse()?;
+                            if base_styled.is_some() {
+                                return Err(syn::Error::new_spanned(
+                                    &lit,
+                                    "duplicate base-styled string in `variants(...)`; \
+                                     only one is allowed",
+                                ));
+                            }
+                            base_styled = Some(lit);
+                            if !content.is_empty() {
+                                content.parse::<Token![,]>()?;
+                            }
+                        }
+                        if !content.is_empty() {
+                            let items =
+                                Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
+                            variants.extend(items);
+                        }
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            &name,
+                            format!(
+                                "unknown group `{other}`. Expected `props(...)`, \
+                                 `ext(...)`, or `variants(...)`. (The crate path \
+                                 is set with `crate = path`.)"
+                            ),
+                        ));
+                    }
                 }
             }
 
@@ -139,7 +177,8 @@ impl Parse for ComponentArgs {
             props,
             ext,
             variants,
-            base_style,
+            base_styled,
+            krate,
         })
     }
 }
@@ -217,7 +256,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
             &func.attrs[pos],
             "`#[extensions(...)]` is no longer an attribute on `#[component]`. \
              Move the extension names into the `ext(...)` group, e.g. \
-             `#[component(ext(children, style))]`.",
+             `#[component(ext(children, styled))]`.",
         ));
     }
 
@@ -251,10 +290,13 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let args: ComponentArgs = syn::parse2(attr)?;
-    let base_style = args.base_style;
+    let base_styled = args.base_styled;
     let extension_names = args.ext;
     let attr_props = args.props;
     let variant_props = args.variants;
+
+    // Resolve the crate path the generated code should reference.
+    let krate: Path = args.krate.unwrap_or_else(|| syn::parse_quote!(::freyacn));
 
     // Every variant prop must declare a default.
     for v in &variant_props {
@@ -270,25 +312,25 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         }
     }
 
-    // Variants require `ext(style)` — the merged style needs somewhere to
+    // Variants require `ext(styled)` — the merged styled needs somewhere to
     // live in the render body.
-    if !variant_props.is_empty() && !extension_names.iter().any(|n| n == "style") {
+    if !variant_props.is_empty() && !extension_names.iter().any(|n| n == "styled") {
         return Err(syn::Error::new_spanned(
             &variant_props[0].name,
-            "`variants(...)` requires `style` to also be listed in `ext(...)`, \
-             so the resolved variant stylesheet have somewhere to be merged. \
-             Add `style`, e.g. `ext(style, children)`.",
+            "`variants(...)` requires `styled` to also be listed in `ext(...)`, \
+             so the resolved variant styled have somewhere to be merged. \
+             Add `styled`, e.g. `ext(styled, children)`.",
         ));
     }
 
-    // Base style lives in the same merge chain and therefore needs
-    // `ext(style)` too.
-    if base_style.is_some() && !extension_names.iter().any(|n| n == "style") {
+    // Base styled lives in the same merge chain and therefore needs
+    // `ext(styled)` too.
+    if base_styled.is_some() && !extension_names.iter().any(|n| n == "styled") {
         return Err(syn::Error::new_spanned(
-            base_style.as_ref().unwrap(),
-            "`variants(\"...\")` base style requires `style` to also be listed \
+            base_styled.as_ref().unwrap(),
+            "`variants(\"...\")` base styled requires `styled` to also be listed \
              in `ext(...)`, so the base can be folded into the render body's \
-             style. Add `style`, e.g. `ext(style, children)`.",
+             styled. Add `styled`, e.g. `ext(styled, children)`.",
         ));
     }
 
@@ -299,10 +341,11 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let extensions_code = extension::collect(
+        &krate,
         &struct_ident,
         &extension_names,
         &variant_field_names,
-        base_style.as_ref(),
+        base_styled.as_ref(),
     )?;
     let ext_field_defs = &extensions_code.field_defs;
     let ext_field_inits = &extensions_code.field_inits;
@@ -406,7 +449,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 &prop.name,
                 format!(
                     "`{}` collides with a field contributed by `ext(...)`. \
-                     Extension fields are reserved by freyacn_core and cannot be \
+                     Extension fields are reserved by freyacn-core and cannot be \
                      shadowed by {}.",
                     prop.name,
                     source_label(prop.source),
@@ -470,7 +513,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                     "The `{name}` variant prop (`{ty_str}`).\n\n\
                      **Variant.** Declared in `variants(...)` with a default. \
                      Stored as `{ty_str}` and initialised with that default. \
-                     Its style is merged into the render body's `style` local \
+                     Its styled is merged into the render body's `styled` local \
                      before the user overrides.\n\n\
                      Set via [`Self::{name}`]; accepts any `impl Into<{ty_str}>` \
                      — including `&str` and `String` when the enum implements \
@@ -654,10 +697,10 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         )
     };
 
-    let base_style_section = match &base_style {
+    let base_styled_section = match &base_styled {
         Some(lit) => format!(
-            "\n\n## Base style\n\n\
-             Applied at the bottom of the style merge chain — variants and \
+            "\n\n## Base styled\n\n\
+             Applied at the bottom of the styled merge chain — variants and \
              user overrides win over it:\n\n```text\n{}\n```",
             lit.value(),
         ),
@@ -678,7 +721,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         "Component generated from the function `{fn_name}`.\n\n\
          ## Props\n\n{props_section}\
          {struct_fields_section}\
-         {base_style_section}\n\n\
+         {base_styled_section}\n\n\
          ## Extensions\n\n{ext_section}",
         fn_name = fn_name_str,
     );
@@ -704,9 +747,9 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
          Props are bound by reference as locals: required, defaulted, and \
          variant props as `&T`, optional props and struct fields as \
          `&Option<T>`. Extension fields are bound the same way. When the \
-         component declares `variants(...)` (with or without a base style), \
-         the `style` local is the merge of the base style, every variant's \
-         resolved style, and the user's overrides."
+         component declares `variants(...)` (with or without a base styled), \
+         the `styled` local is the merge of the base styled, every variant's \
+         resolved styled, and the user's overrides."
     );
 
     let macro_doc = format!(
@@ -721,9 +764,14 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let component_trait_impl = quote! {
-        impl ::freyacn::prelude::Component for #struct_ident {
-            #[doc = #render_doc]
-            fn render(&self) -> impl ::freyacn::prelude::IntoElement {
+    impl #krate::prelude::Component for #struct_ident {
+        // `variant` / `size` / etc. are bound as locals in the render body
+        // by `#(#prop_bindings)*` so users *can* reference them, but the
+        // common case (the shadcn `Button` here) only uses the merged
+        // `style` local — hence the allow.
+        #[allow(unused_variables)]
+        #[doc = #render_doc]
+        fn render(&self) -> impl #krate::prelude::IntoElement {
                 #(#ext_local_bindings)*
                 #(#prop_bindings)*
                 #body

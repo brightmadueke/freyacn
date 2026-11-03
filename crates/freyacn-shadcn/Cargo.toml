@@ -12,3 +12,8 @@ categories.workspace = true
 publish = false
 
 [dependencies]
+freyacn-core = { workspace = true }
+freyacn-macros = { workspace = true }
+freya-icons = { version = "0.5.0-rc.13", features = ["lucide"] }
+freya = { version = "0.5.0-rc.13", features = ["icons"] }
+torin = "0.5.0-rc.13"

@@ -3035,22 +3035,14 @@ dependencies = [
 name = "freyacn"
 version = "0.2.2"
 dependencies = [
+ "freyacn-core",
+ "freyacn-macros",
  "freyacn-material3",
  "freyacn-shadcn",
- "freyacn_core",
- "freyacn_macros",
 ]
 
 [[package]]
-name = "freyacn-material3"
-version = "0.2.2"
-
-[[package]]
-name = "freyacn-shadcn"
-version = "0.2.2"
-
-[[package]]
-name = "freyacn_cli"
+name = "freyacn-cli"
 version = "0.2.2"
 dependencies = [
  "anyhow",
@@ -3065,7 +3057,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "freyacn_core"
+name = "freyacn-core"
 version = "0.2.2"
 dependencies = [
  "freya",
@@ -3081,12 +3073,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "freyacn_macros"
+name = "freyacn-macros"
 version = "0.2.2"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "freyacn-material3"
+version = "0.2.2"
+
+[[package]]
+name = "freyacn-shadcn"
+version = "0.2.2"
+dependencies = [
+ "freya",
+ "freya-icons 0.5.0-rc.13",
+ "freyacn-core",
+ "freyacn-macros",
+ "torin",
 ]
 
 [[package]]

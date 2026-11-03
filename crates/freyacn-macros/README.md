@@ -1,10 +1,3 @@
-# `freyacn-macros`
-
-> ⚠️ **Work in progress.** This crate is under active development and its
-> public API is **not yet stable**. Breaking changes may land in any release.
-> The shapes shown below are the current target, not a compatibility promise.
-> Expect rough edges, missing features, and doc/code drift.
-
 Procedural macros for the [`freyacn`][freyacn] crate. They turn plain
 functions and enums into styled, prop-driven components for
 [Freya][freya], with complete generated documentation.
@@ -35,14 +28,21 @@ to be used on its own, for two reasons:
    pull in the same code twice and, worse, risk pulling *different*
    versions.
 
-2. **The macros emit paths to `freyacn` types.** The generated code refers
-   to `::freyacn::prelude::Component`, `::freyacn::prelude::Style`, and so
-   on. Without `freyacn` in the dependency graph, expansion would fail with
-   "cannot find crate `freyacn`".
+2. **The macros emit paths to `freyacn` types by default.** The generated
+   code refers to `::freyacn::prelude::Component`,
+   `::freyacn::prelude::Style`, and so on. Without `freyacn` in the
+   dependency graph, expansion would fail with "cannot find crate
+   `freyacn`".
 
-The only reason to depend on `freyacn-macros` directly is if you are
-forking the macro implementation itself. For every other use case, use
-`freyacn`.
+The only reasons to depend on `freyacn-macros` directly are:
+
+- Forking the macro implementation itself.
+- Writing a crate in the *same workspace* that the facade depends on (e.g. `freyacn-shadcn`) and using the
+  `crate = <path>` override to emit
+  paths to `freyacn_core` instead of `freyacn`. See
+  [Crate path override](#crate-path-override).
+
+For every other use case, use `freyacn`.
 
 ---
 
@@ -51,7 +51,7 @@ forking the macro implementation itself. For every other use case, use
 | Attribute               | Purpose                                                                                                                                                                       |
 |-------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `#[component(...)]`     | Turns a function into a component struct, a PascalCase constructor fn, and a companion macro. `props`, `ext`, and `variants` groups live inside it.                           |
-| `#[variant]`            | Turns an enum into a style-resolving variant type with `From<&str>` / `From<String>`, `.style_str()`, `.resolve()`, and an `impl freyacn::prelude::Variant`.                  |
+| `#[variant]`            | Turns an enum into a style-resolving variant type with `From<&str>` / `From<String>`, `.style_str()`, `.resolve()`, and an `impl freyacn::prelude::ComponentVariant`.         |
 | `#[struct_fields(...)]` | Placed below `#[component]`; adds internal storage fields the user's own trait impls manage. No setters are generated.                                                        |
 | `#[extensions(...)]`    | Standalone attribute that opts any struct into freyacn's built-in extension bundles. The `ext(...)` group inside `#[component]` is the same feature for generated components. |
 
@@ -89,24 +89,26 @@ pub enum ButtonVariant {
     #[variant("bg-destructive text-destructive-foreground")]
     Destructive,
 
-    #[variant("border-2 border-primary bg-transparent text-primary")]
+    #[variant("border border-border bg-background text-foreground")]
     Outline,
 }
 
 #[component(
-    props( badge: String = "new".to_string()),
-    ext(style, children, key, event_handlers),
+    props(badge: String = "new".to_string()),
+    ext(styled, children, key, event_handlers, semantic_events),
     variants(
         "px-4 py-2 rounded-lg",
         variant: ButtonVariant = ButtonVariant::Default,
     ),
 )]
+#[allow(unused_variables)]
 pub fn Button() {
-    Div()
+    div()
+        .merge_style(style.clone())
         .children(children.clone())
         .event_handlers(event_handlers.clone())
-        .merge_style(style.clone())
-        .child(label().text("Save"))
+        .semantic_events(semantic_events.clone())
+        .child(text("Save"))
 }
 ```
 
@@ -115,10 +117,15 @@ pub fn Button() {
 > the expression you want rendered, and skip both the `-> impl IntoElement`
 > annotation and any trailing `.into()`.
 
-> **Components don't have a `label` prop by default.** Content is passed as
-> children — `.child(label().text(...))` — or via a `label: String` function
-> parameter if you want `Button().label("Save")` (function parameters become
-> required props).
+> **`#[allow(unused_variables)]`.** `variant` and other named props are
+> bound as locals in the render body — you *can* reference them, but the
+> common case (a shadcn-style wrapper around a primitive) only uses the
+> merged `style` local. Add the allow to silence the warning.
+
+> **Components don't have a `label` prop by default.** Content is passed
+> as children — `.child(text(…))` — or via a `label: String` function
+> parameter if you want `Button().label("Save")` (function parameters
+> become required props).
 
 Three equivalent ways to construct the component above:
 
@@ -128,9 +135,50 @@ Button().variant("destructive");                      // &str
 Button!(variant = "destructive");                     // macro
 ```
 
-For what `style`, `bg_primary`, `p_4`, and other `StyleExt` helpers do, and
-for the class-string token catalogue, see the `freyacn` crate README. This
-document covers only the *macro* surface.
+For what `style`, `bg_primary`, `p_4`, and other `StyledExt` helpers do,
+and for the class-string token catalogue, see the `freyacn` crate README.
+This document covers only the *macro* surface.
+
+---
+
+## Crate path override
+
+Every macro emits paths like `::freyacn::prelude::…`. That's correct for
+user-facing code, which always has the facade available.
+
+But **internal crates that the facade depends on** (e.g.
+`freyacn-shadcn`) can't depend on `freyacn` — that's a dependency cycle.
+For those, override the emitted path at the macro site:
+
+```rust
+// Inside freyacn-shadcn, which depends on freyacn-core but not freyacn.
+use freyacn_macros::{component, variant};
+
+#[variant(freyacn_core)]
+pub enum ButtonVariant { /* … */ }
+
+#[component(
+    crate = freyacn_core,
+    variants(…),
+    ext(styled, children),
+)]
+pub fn Button() { /* … */ }
+
+#[extensions(crate = freyacn_core, styled, children)]
+pub struct Panel {
+    /* … */
+}
+```
+
+The generated code now references `freyacn_core::prelude::{…}` instead of
+`freyacn::prelude::{…}`. The target crate must expose the same items (`Style`, `StyledExt`, `ComponentVariant`,
+`Element`, `Component`,
+`IntoElement`, the extension traits, …) under its `prelude` — `freyacn-core`
+does.
+
+`#[variant]`'s override accepts the bare path (`#[variant(freyacn_core)]`);
+`#[component]` and `#[extensions]` use `crate = <path>` because they
+already have named groups and the explicit form avoids ambiguity.
 
 ---
 
@@ -139,7 +187,7 @@ document covers only the *macro* surface.
 Every component is written as a normal Rust function. The attribute groups
 declare where each field comes from; the source decides its kind.
 
-### Four field sources
+### Field sources
 
 | Source                          | Kind          | Field type       | Init             | Body sees                   | Setter accepts              |
 |---------------------------------|---------------|------------------|------------------|-----------------------------|-----------------------------|
@@ -149,7 +197,7 @@ declare where each field comes from; the source decides its kind.
 | `variants(name: T = default)`   | **variant**   | `T`              | `default`        | `&T`                        | `impl Into<T>`              |
 | `#[struct_fields(name: T)]`     | **internal**  | `Option<T>`      | `None`           | `&Option<T>`                | *(no setter)*               |
 | `#[struct_fields(name: T = x)]` | **internal**  | `T`              | `x`              | `&T`                        | *(no setter)*               |
-| `ext(children, style, …)`       | **extension** | *trait-specific* | *trait-specific* | *trait-specific*            | *(no setter)*               |
+| `ext(...)`                      | **extension** | *trait-specific* | *trait-specific* | *trait-specific*            | *(no setter)*               |
 
 You **never** write `Option<T>` yourself for an optional prop or a struct
 field — writing `name: String` is enough; the macro wraps it.
@@ -158,6 +206,7 @@ field — writing `name: String` is enough; the macro wraps it.
 
 ```text
 #[component(
+    crate = <path>,                            // optional
     props(    prop1: Type1, prop2: Type2 = default_expr, … ),
     ext(      extension1, extension2, … ),
     variants( [ "base style string", ]
@@ -194,7 +243,7 @@ expression of the body just needs to implement `IntoElement`:
 ```rust
 #[component]
 fn Greeting(name: String) {
-    label().text(format!("Hello, {name}!"))   // no `-> …`, no `.into()`
+    text(format!("Hello, {name}!"))   // no `-> …`, no `.into()`
 }
 ```
 
@@ -203,7 +252,7 @@ fn Greeting(name: String) {
 ```rust
 #[component]
 fn Greeting(name: String) {
-    label().text(format!("Hello, {name}!"))
+    text(format!("Hello, {name}!"))
 }
 
 Greeting().name("Ada");           // OK
@@ -214,18 +263,18 @@ Greeting().name("Ada");           // OK
 ### Optional props — `props(name: T)`
 
 ```rust
-#[component(props( subtitle: String))]
-fn Heading(subtitle: String) {
-    match subtitle {
-        Some(s) => label().text(s.as_str()),
-        None => Div(),
+#[component(props(subtitle: String))]
+fn Heading() {
+    match subtitle.as_ref() {
+        Some(s) => text(s.clone()),
+        None => div(),
     }
 }
 
-h.subtitle("hi");                       // &str  → Some("hi".into())
-h.subtitle(String::from("hi"));         // String → Some
-h.subtitle(Some("hi".to_string()));     // Option<String>
-h.subtitle(None);                       // Option<String>
+Heading().subtitle("hi");                       // &str  → Some("hi".into())
+Heading().subtitle(String::from("hi"));         // String → Some
+Heading().subtitle(Some("hi".to_string()));     // Option<String>
+Heading().subtitle(None);                       // Option<String>
 ```
 
 ### Defaulted props — `props(name: T = expr)`
@@ -235,8 +284,8 @@ h.subtitle(None);                       // Option<String>
     size:   f32    = 16.0,
     weight: String = "normal".to_string(),
 ))]
-fn Text(size: f32, weight: String) {
-    label().text(format!("{}pt {}", size, weight))
+fn LabelText() {
+    text(format!("{size}pt {weight}"))
 }
 ```
 
@@ -248,11 +297,12 @@ Setter takes `impl Into<T>`, which lets you pass the enum value or any type
 
 ```rust
 #[component(
-    variants( variant: ButtonVariant = ButtonVariant::Default),
-    ext(style, children),
+    variants(variant: ButtonVariant = ButtonVariant::Default),
+    ext(styled, children),
 )]
+#[allow(unused_variables)]
 fn Button() {
-    Div()
+    div()
         .merge_style(style.clone())
         .children(children.clone())
 }
@@ -262,10 +312,11 @@ b.variant("destructive");                // &str
 b.variant(String::from("destructive"));  // String
 ```
 
-> **`variants(...)` requires `ext(style)`.** The merged style is bound as a
-> local called `style` in the render body — that requires the `style`
-> extension. If you declare variants without `ext(style)`, the macro emits a
-> targeted compile error.
+> **`variants(...)` requires `ext(styled)`.** The merged style is bound as a
+> local called `style` in the render body — that requires the `styled`
+> extension. If you declare variants without `ext(styled)`, the macro emits a
+> targeted compile error. (Note: the extension is `styled`, not `style` —
+> `style` names the field, `styled` names the extension.)
 
 #### Base style — `variants("base classes", …)`
 
@@ -275,16 +326,19 @@ variants and user overrides still win over it:
 
 ```rust
 #[component(
-    ext(style, children),
+    ext(styled, children),
     variants(
         "inline-flex items-center justify-center rounded-md \
-         text-sm font-medium whitespace-nowrap transition-colors",
+         text-sm font-medium whitespace-nowrap",
         variant: ButtonVariant = ButtonVariant::Default,
         size:    ButtonSize    = ButtonSize::Default,
     ),
 )]
+#[allow(unused_variables)]
 pub fn Button() {
-    Div().merge_style(style.clone()).children(children.clone())
+    div()
+        .merge_style(style.clone())
+        .children(children.clone())
 }
 ```
 
@@ -293,10 +347,10 @@ Rules:
 * **At most one** string literal. A second one is a compile error.
 * **Positioned first.** If you write `variants(variant: …)` first and then
   a string literal, the parser rejects the string as an unexpected token.
-* **Requires `ext(style)`.** The base lives in the same fold chain that
+* **Requires `ext(styled)`.** The base lives in the same fold chain that
   merges the variants.
-* **Optional.** When omitted, the merge chain is exactly what it was before:
-  `Style::default().merge(variant.resolve())…`.
+* **Optional.** When omitted, the merge chain is just
+  `Style::default().merge_style(&variant.resolve())…`.
 
 ### Struct fields — `#[struct_fields(...)]`
 
@@ -307,7 +361,7 @@ store data your own trait impls need.
 ```rust
 use freyacn::prelude::*;
 
-#[component(props( subtitle: String))]
+#[component(props(subtitle: String))]
 #[struct_fields(
     tooltip: MyTooltip,              // Option<MyTooltip> = None
     hover_count: usize = 0,          // usize = 0
@@ -315,7 +369,7 @@ use freyacn::prelude::*;
 fn Card(name: String) {
     let _ = tooltip.as_ref().map(|t| t.text.as_str()).unwrap_or("");
     let _ = hover_count;
-    Div().child(label().text(name.as_str()))
+    div().child(text(name.clone()))
 }
 
 // Your own trait — plain Rust, no macro.
@@ -355,8 +409,9 @@ Applied to an enum, generates:
 
 * `impl MyEnum { fn style_str(&self) -> &'static str; }`
 * `impl MyEnum { fn resolve(&self) -> freyacn::prelude::Style; }` —
-  convenience alias that doesn't require importing `StyleVariant`.
-* `impl freyacn::prelude::Variant for MyEnum` — the trait-based resolver.
+  convenience alias that doesn't require importing `ComponentVariant`.
+* `impl freyacn::prelude::ComponentVariant for MyEnum` — the
+  trait-based resolver.
 * `impl From<&str> for MyEnum`
 * `impl From<String> for MyEnum`
 
@@ -368,14 +423,14 @@ use freyacn::prelude::*;
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
-    #[variant("bg-primary text-primary-foreground")]
+    #[variant("bg-primary text-primary-foreground hover:bg-primary/90")]
     #[default]
     Default,
 
-    #[variant("bg-destructive text-destructive-foreground")]
+    #[variant("bg-destructive text-white hover:bg-destructive/90")]
     Destructive,
 
-    #[variant("border-2 border-primary bg-transparent text-primary")]
+    #[variant("border border-input bg-background hover:bg-accent")]
     Outline,
 }
 ```
@@ -387,6 +442,7 @@ pub enum ButtonVariant {
 | `Default`              | `default`               |
 | `Md`                   | `md`                    |
 | `XS`                   | `xs`                    |
+| `IconXs`               | `icon-xs`               |
 | `SecondaryDestructive` | `secondary-destructive` |
 
 ### Fallback for unknown names
@@ -396,33 +452,70 @@ default first and mark it `#[default]` if you use `derive(Default)`.
 
 ### Resolving to a `Style`
 
-`.resolve()` reads the active theme and parses the variant's style string.
-It must be called inside a Freya render context. When used as a prop inside
-a component that declares `variants(...)` and `ext(style)`, the macro calls
-`.resolve()` for you and merges the result into the render body's `style`
-local — after the base style, before user overrides.
+`.resolve()` reads the active theme, parses the variant's style string, and
+returns a `Style`. It must be called inside a Freya render context.
+
+**Crucially, `resolve()` starts from `Style::bare()`, not
+`Style::default()`.** This is the [Style::bare () invariant](#the-stylebare-invariant)
+that makes variant class strings survive the merge into a component. See
+that section for the full explanation.
+
+When used as a prop inside a component that declares `variants(...)` and
+`ext(styled)`, the macro calls `.resolve()` for you and merges the result
+into the render body's `style` local — after the base style, before user
+overrides.
 
 You can also resolve manually:
 
 ```rust
 let v = ButtonVariant::Destructive;
 let s = v.resolve();
-Div().merge_style(s);
+div().merge_style(s);
 ```
 
-### The `StyleVariant` trait
+### The `ComponentVariant` trait
 
-`#[variant]` generates `impl freyacn::prelude::Variant for MyEnum`. The
-trait is:
+`#[variant]` generates `impl freyacn::prelude::ComponentVariant for MyEnum`.
+The trait is:
 
 ```rust
-pub trait Variant {
+pub trait ComponentVariant {
     fn resolve(&self) -> Style;
 }
 ```
 
 It exists so the component macro can merge variant styles without knowing
-the concrete enum type — it just calls `Variant::resolve(&self.field)`.
+the concrete enum type — it just calls `ComponentVariant::resolve(&self.field)`.
+
+(The trait was renamed from `Variant` — the shorter name collided with
+`StyleVariant`, the pseudo-state enum. Same role, clearer name.)
+
+### Testing your variants
+
+Class strings are parsed at **runtime**, so a typo compiles but panics on
+the first render. Guard against that with a parse test:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use freyacn_core::styling::StyledString;
+
+    #[test]
+    fn all_variants_parse() {
+        for v in [
+            ButtonVariant::Default,
+            ButtonVariant::Destructive,
+            ButtonVariant::Outline,
+        ] {
+            StyledString::parse(v.style_str());
+        }
+    }
+}
+```
+
+This turns a runtime panic into a `cargo test` failure and pins the
+vocabulary of every variant's class string.
 
 ---
 
@@ -439,13 +532,19 @@ Each name maps to a bundle of:
 
 ### Supported names
 
-| Name             | Trait                                | Field(s) added                                           | Trait method             |
-|------------------|--------------------------------------|----------------------------------------------------------|--------------------------|
-| `children`       | `freyacn::prelude::ChildrenExt`      | `children: Vec<Element>`                                 | `get_children`           |
-| `key`            | `freyacn::prelude::KeyExt`           | `key: DiffKey`                                           | `write_key`              |
-| `style`          | `freyacn::prelude::StyleExt`         | `style: Style`                                           | `get_style`              |
-| `event_handlers` | `freyacn::prelude::EventHandlersExt` | `event_handlers: FxHashMap<EventName, EventHandlerType>` | `get_event_handlers`     |
-| `accessibility`  | `freyacn::prelude::AccessibilityExt` | `accessibility: AccessibilityData`                       | `get_accessibility_data` |
+| Name              | Trait                                 | Field(s) added                                           | Trait method             |
+|-------------------|---------------------------------------|----------------------------------------------------------|--------------------------|
+| `children`        | `freyacn::prelude::ChildrenExt`       | `children: Vec<Element>`                                 | `children_mut`           |
+| `key`             | `freyacn::prelude::KeyExt`            | `key: DiffKey`                                           | `key_mut`                |
+| `styled`          | `freyacn::prelude::StyledExt`         | `style: Style`                                           | `get_style`              |
+| `event_handlers`  | `freyacn::prelude::EventHandlersExt`  | `event_handlers: FxHashMap<EventName, EventHandlerType>` | `event_handlers_mut`     |
+| `accessibility`   | `freyacn::prelude::AccessibilityExt`  | `accessibility: AccessibilityData`                       | `accessibility_data_mut` |
+| `semantic_events` | `freyacn::prelude::HasSemanticEvents` | `semantic_events: SemanticEvents`                        | `semantic_events_mut`    |
+
+Note the trait method names use the `*_mut` convention — `children_mut`,
+`key_mut`, `event_handlers_mut`, `accessibility_data_mut`. `get_style` is
+the exception because `StyledExt::get_style` is the accessor every fluent
+method builds on; renaming it would break the builder API.
 
 ### On a hand-written struct
 
@@ -455,7 +554,7 @@ or implement `Default` so the added fields can be initialised.
 ```rust
 use freyacn::prelude::*;
 
-#[extensions(children, key, style, accessibility)]
+#[extensions(children, key, styled, accessibility)]
 #[derive(Clone, PartialEq, Default)]
 pub struct PlainBox;
 ```
@@ -470,10 +569,10 @@ pub struct PlainBox {
     pub accessibility: AccessibilityData,
 }
 
-impl ChildrenExt for PlainBox { /* get_children */ }
-impl KeyExt for PlainBox { /* write_key */ }
-impl StyleExt for PlainBox { /* get_style */ }
-impl AccessibilityExt for PlainBox { /* get_accessibility_data */ }
+impl ChildrenExt for PlainBox { /* children_mut */ }
+impl KeyExt for PlainBox { /* key_mut */ }
+impl StyledExt for PlainBox { /* get_style */ }
+impl AccessibilityExt for PlainBox { /* accessibility_data_mut */ }
 ```
 
 ### Choosing a subset
@@ -481,54 +580,102 @@ impl AccessibilityExt for PlainBox { /* get_accessibility_data */ }
 Opt into just the extensions you need:
 
 ```rust
-#[extensions(style)]
+#[extensions(styled)]
 #[derive(Clone, PartialEq, Default)]
 pub struct Styled {
     pub label: String,
 }
 ```
 
-`Styled` gets a `style: Style` field and the `StyleExt` impl — but no
+`Styled` gets a `style: Style` field and the `StyledExt` impl — but no
 `children`, no `key`, no event handlers. Pay only for what you request.
 
 Standalone `#[extensions(...)]` never accepts a base style — that's a
 `#[component]` concept that lives inside `variants("…")`.
 
----
+### Using `styled` to drive an element
 
-## Style layering
+The `styled` extension is what gives your struct the full `StyledExt`
+surface — `.bg(..)`, `.p_4()`, `.style("…")`, `.hover(..)`, and so on.
+`style` starts at `Style::bare()`, so it behaves as a **sparse patch**:
+only the fields you explicitly set are non-bare. See the
+[Style::bare () invariant](#the-stylebare-invariant) for why this matters.
 
-The most important runtime behaviour to understand is **how `style` is
-built at render time** when a component has `variants(...)`:
+### Using `semantic_events` on an interactive element
 
-```text
-effective style = Style::default()
-                    .style(<base>)                // optional, from variants("...")
-                    .merge(variant.resolve())     // declared order
-                    .merge(size.resolve())
-                    .merge(self.style.clone())    // user overrides win
+`semantic_events` adds `.on_hover(..)` / `.on_pressed(..)` / `.on_focus(..)`
+and friends, plus the aria-state builders that drive the `aria-*:`
+class families:
+
+```rust
+#[component(
+    ext(styled, semantic_events, children),
+)]
+#[allow(unused_variables)]
+pub fn Input() {
+    // `.with_aria_invalid(bool)` flips the `aria-invalid:*` variant
+    // at the primitive level.
+    input(/* … */)
+        .merge_style(style.clone())
+        .semantic_events(semantic_events.clone())
+        .children(children.clone())
+}
 ```
 
-The base style string is the optional leading argument to `variants(...)`;
-if omitted, that step is skipped. Every `StyleExt` method called on the
-component writes to the *override layer* (`self.style`). Base and variant
-styles are computed fresh from the theme at render time and merged
-underneath.
+The extension only **stores** the events and exposes the setters. The
+render body is responsible for wiring them into the primitive — see the
+`styling::semantic_events` module docs for the correct shape.
+
+---
+
+## The `Style::bare()` invariant
+
+The most important runtime behaviour to understand is **how `style` is
+built at render time** when a component has `variants(...)`. Two of the
+three layers start from `Style::bare()`, and one starts from
+`Style::default()`:
+
+```text
+effective style = Style::default()                    ← theme layer
+                    .style(<base>)                    ← base class string
+                    .merge_style(&variant.resolve())  ← starts from bare()
+                    .merge_style(&size.resolve())     ← starts from bare()
+                    .merge_style(&self.style)         ← starts from bare()
+```
+
+**Only the theme layer uses `Style::default()`.** `ComponentVariant::resolve()`
+and `self.style` (the `styled` extension's field) both initialise at
+`Style::bare()`, so they behave as *sparse patches* — only fields the layer
+explicitly sets survive the merge.
+
+Why does this matter? Because `Style::merge_style` copies a field from its
+argument **only if that field differs from `Style::bare()`**. If
+`resolve()` returned `Style::default()`, its `text_color` would be the
+theme's `foreground` (not bare black), so `merge_style` would copy
+`foreground` into the folded style — silently overwriting whatever the
+variant's class string actually set (e.g. `text-primary-foreground`).
+
+Concretely: a `ButtonVariant::Default` whose class string is
+`bg-primary text-primary-foreground` renders with `text_color =
+primaryForeground`. If `resolve()` started from `Style::default()`,
+`foreground` would leak through the `ButtonSize::Default` and `.style(..)`
+layers and overwrite it, and the button would render with the wrong text
+colour.
 
 **Consequences:**
 
 * **Overrides persist across variant changes.** Calling `.variant("outline")`
-  recomputes the base layer but leaves user intent intact. If a caller wrote
-  `.bg_green_50()`, that override still wins.
+  recomputes the base layer but leaves user intent intact. If a caller
+  wrote `.bg(green_50())`, that override still wins.
 * **Theme changes propagate automatically.** `.resolve()` reads the active
   theme on every render, not at construction. A dark-mode toggle re-renders
   the whole tree with the new theme.
-* **The base comes first, so it is the least specific declaration.** Variants
-  and user overrides always win over it — matching shadcn's
+* **The base comes first, so it is the least specific declaration.**
+  Variants and user overrides always win over it — matching shadcn's
   `cn(base, variant, size, user)` layering.
-
-For the actual merging rules (`Style::merge` vs `Style::or`, `Gaps`
-per-side merging, `with_active_states`), see the `freyacn` crate README.
+* **Theme-seeded fields are preserved.** If no layer sets `font_size`,
+  the theme's `font_size` survives the merge because no overlay patch has
+  a non-bare `font_size` field.
 
 ---
 
@@ -539,11 +686,11 @@ and the `#[component(...)]` groups is forwarded **verbatim** to the generated
 struct. The macro does **not** bake in any derives.
 
 ```rust
-#[component(props( label: String))]
+#[component(props(label: String))]
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg(feature = "experimental")]
 #[my_custom_macro(arg = 42)]
-fn Widget(label: String) { /* … */ }
+fn Widget() { /* … */ }
 ```
 
 The generated struct carries the same `#[derive(...)]`, `#[cfg(...)]`, and
@@ -571,7 +718,7 @@ itself:
 ```
 
 The base-style string inside `variants(...)` is not a field — it only lives
-in the merge chain emitted for the `style` extension.
+in the merge chain emitted for the `styled` extension.
 
 ## Collision rules
 
@@ -589,14 +736,14 @@ For:
 
 ```rust
 #[component(
-    props( subtitle: String),
-    ext(children, style),
+    props(subtitle: String),
+    ext(children, styled),
     variants(
         "inline-flex items-center rounded-lg",
         variant: ButtonVariant = ButtonVariant::Default,
     ),
 )]
-#[struct_fields( tooltip: MyTooltip, hover_count: usize = 0)]
+#[struct_fields(tooltip: MyTooltip, hover_count: usize = 0)]
 #[derive(Clone, Debug, PartialEq)]
 fn Button(label: String) { /* … */ }
 ```
@@ -612,7 +759,7 @@ pub struct ButtonComponent {
     pub variant: ButtonVariant,                 // variant prop
     pub label: Option<String>,                  // required prop
     pub children: Vec<Element>,                 // extension
-    pub style: Style,                           // extension
+    pub style: Style,                           // extension (bare patch)
 }
 
 impl ButtonComponent {
@@ -625,26 +772,31 @@ impl ButtonComponent {
 
 impl Default for ButtonComponent { /* delegates to new() */ }
 
-impl freyacn::prelude::ChildrenExt for ButtonComponent { /* … */ }
-impl freyacn::prelude::StyleExt for ButtonComponent { /* … */ }
+impl freyacn::prelude::ChildrenExt for ButtonComponent { /* children_mut */ }
+impl freyacn::prelude::StyledExt for ButtonComponent { /* get_style */ }
 
 impl freyacn::prelude::Component for ButtonComponent {
     fn render(&self) -> impl freyacn::prelude::IntoElement {
         let children: &Vec<Element> = &self.children;
 
         // The `style` local is the merged result:
-        //   base style  +  variant.resolve()  +  self.style (user overrides)
+        //   theme defaults  →  base style  →  variant.resolve()  →  self.style
+        //
+        // `__freyacn_base` starts from `Style::default()` (theme layer).
+        // Each overlay (`variant.resolve()` and `self.style`) starts from
+        // `Style::bare()`, so only fields each layer explicitly set survive
+        // the merge.
         let __freyacn_merged_style: Style = {
-            let mut __freyacn_base = Style::default();
+            let mut __freyacn_base = <Style as Default>::default();
             // Base style, when declared in `variants("...")`:
-            __freyacn_base = StyleExt::style(
+            __freyacn_base = StyledExt::style(
                 __freyacn_base,
                 "inline-flex items-center rounded-lg",
             );
-            __freyacn_base = __freyacn_base.merge(
-                freyacn::prelude::Variant::resolve(&self.variant)
+            __freyacn_base = __freyacn_base.merge_style(
+                &freyacn::prelude::ComponentVariant::resolve(&self.variant)
             );
-            __freyacn_base.merge(self.style.clone())
+            __freyacn_base.merge_style(&self.style)
         };
         let style: &Style = &__freyacn_merged_style;
 
@@ -671,10 +823,10 @@ macro_rules! Button {
 }
 ```
 
-When `variants(...)` has **no** base string, the `StyleExt::style(...)`
+When `variants(...)` has **no** base string, the `StyledExt::style(...)`
 line is omitted — the merge chain is byte-identical to what it was before
 the feature landed. When the component declares **no** variants at all,
-the `style` extension still emits the fast path (`let style = &self.style;`)
+the `styled` extension still emits the fast path (`let style = &self.style;`)
 with no merge at all.
 
 Every item carries generated documentation describing its role and kind —
@@ -684,12 +836,45 @@ section.
 
 ---
 
+## Hook safety
+
+`#[component]`'s body becomes `Component::render`'s body. **Hook functions
+must be called unconditionally at the top of `render`** — Freya panics on
+the second render if the slot count changes.
+
+The rule:
+
+```rust
+// ✗ PANICS on the second render — the outer `use_hook` short-circuits,
+//   the inner hooks never fire, and Freya complains about slot
+//   misalignment.
+fn app() -> impl IntoElement {
+    use_hook(|| {
+        load_theme_registry_from_dir(dir).set_active("…").unwrap();
+    });
+    // …
+}
+
+// ✓ `load_theme_registry_from_dir` is itself a hook that internally
+//   wraps in `use_hook`. Call it directly.
+fn app() -> impl IntoElement {
+    load_theme_registry_from_dir(dir).set_active("…").unwrap();
+    // …
+}
+```
+
+Same rule as Freya's own components: no `use_state` / `use_hook` /
+`use_a11y` / `use_focus` / `use_side_effect` inside `if` branches, `for`
+loops, or nested `use_hook` closures.
+
+---
+
 ## Compile errors
 
 ### Duplicate name across sources
 
 ```rust
-#[component(props( name: String = "ada".to_string()))]
+#[component(props(name: String = "ada".to_string()))]
 fn Card(name: String) { /* … */ }
 ```
 
@@ -714,7 +899,7 @@ error: missing type — every field must declare its type, e.g. `name: String`.
 ### `required` keyword
 
 ```rust
-#[component(props( required name: String))]
+#[component(props(required name: String))]
 fn Card(name: String) { /* … */ }
 ```
 
@@ -727,7 +912,7 @@ error: `required` is not a keyword. Function parameters are the only way to
 ### Collision with an extension field
 
 ```rust
-#[component(props( children: Vec<Element>), ext(children))]
+#[component(props(children: Vec<Element>), ext(children))]
 fn Broken() { /* … */ }
 ```
 
@@ -737,25 +922,25 @@ error: `children` collides with a field contributed by `ext(...)`.
        an attribute prop (`props(...)`).
 ```
 
-### Variants without `ext(style)`
+### Variants without `ext(styled)`
 
 ```rust
 #[component(
-    variants( variant: ButtonVariant = ButtonVariant::Default),
+    variants(variant: ButtonVariant = ButtonVariant::Default),
 )]
 fn Button() { /* … */ }
 ```
 
 ```
-error: `variants(...)` requires `style` to also be listed in `ext(...)`,
+error: `variants(...)` requires `styled` to also be listed in `ext(...)`,
        so the resolved variant styles have somewhere to be merged.
-       Add `style`, e.g. `ext(style, children)`.
+       Add `styled`, e.g. `ext(styled, children)`.
 ```
 
 ### Variant without a default
 
 ```rust
-#[component(variants( variant: ButtonVariant), ext(style))]
+#[component(variants(variant: ButtonVariant), ext(styled))]
 fn Button() { /* … */ }
 ```
 
@@ -764,7 +949,7 @@ error: variant prop `variant` requires a default, e.g.
        `variant: MyEnum = MyEnum::Default`
 ```
 
-### Base style without `ext(style)`
+### Base style without `ext(styled)`
 
 ```rust
 #[component(
@@ -774,16 +959,16 @@ fn Button() { /* … */ }
 ```
 
 ```
-error: `variants("...")` base style requires `style` to also be listed
+error: `variants("...")` base style requires `styled` to also be listed
        in `ext(...)`, so the base can be folded into the render body's
-       style. Add `style`, e.g. `ext(style, children)`.
+       style. Add `styled`, e.g. `ext(styled, children)`.
 ```
 
 ### Duplicate base style
 
 ```rust
 #[component(
-    ext(style),
+    ext(styled),
     variants("p-4", "p-6", variant: ButtonVariant = ButtonVariant::Default),
 )]
 fn Button() { /* … */ }
@@ -796,13 +981,13 @@ error: duplicate base-style string in `variants(...)`; only one is allowed
 ### Unknown group
 
 ```rust
-#[component(styles( foo: String))]
+#[component(styles(foo: String))]
 fn Card() { /* … */ }
 ```
 
 ```
 error: unknown group `styles`. Expected `props(...)`, `ext(...)`,
-       or `variants(...)`.
+       or `variants(...)`. (The crate path is set with `crate = path`.)
 ```
 
 ### Unknown extension name
@@ -815,19 +1000,30 @@ pub struct Widget;
 
 ```
 error: Unsupported extension `shadow`. Valid names: `children`, `key`,
-       `style`, `event_handlers`, `accessibility`.
+       `styled`, `event_handlers`, `accessibility`, `semantic_events`.
 ```
 
 ### Misplaced `#[struct_fields]`
 
 ```rust
 #[struct_fields(tooltip: MyTooltip)]   // ← wrong order
-#[component(props( name: String))]
+#[component(props(name: String))]
 fn Card(name: String) { /* … */ }
 ```
 
 ```
 error: `#[struct_fields(...)]` must be placed **below** `#[component(...)]`
+```
+
+### Duplicate `crate = …`
+
+```rust
+#[component(crate = freyacn_core, crate = freyacn, ext(styled))]
+fn Card() { /* … */ }
+```
+
+```
+error: duplicate `crate = ...` argument
 ```
 
 ---
@@ -846,20 +1042,23 @@ pub enum ButtonVariant {
     #[default]
     Default,
 
-    #[variant("bg-destructive text-destructive-foreground hover:bg-destructive/90")]
+    #[variant("bg-destructive text-white hover:bg-destructive/90")]
     Destructive,
 
-    #[variant("border border-border bg-background hover:bg-muted")]
+    #[variant("border border-input bg-background hover:bg-accent")]
     Outline,
 }
 
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
-    #[variant("h-8 px-3 text-xs")]    Sm,
+    #[variant("h-8 px-3 text-xs")]
+    Sm,
     #[variant("h-9 px-4 text-sm")]
-    #[default] Md,
-    #[variant("h-10 px-6 text-base")] Lg,
+    #[default]
+    Md,
+    #[variant("h-10 px-6 text-base")]
+    Lg,
 }
 
 // ── Component ────────────────────────────────────────────────────────
@@ -870,36 +1069,37 @@ pub enum ButtonSize {
         tooltip: String,
         disabled: bool = false,
     ),
-    ext(style, children, key, event_handlers, accessibility),
+    ext(styled, children, key, event_handlers, accessibility, semantic_events),
     variants(
         // Base: shared layout, typography, disabled behaviour.
         "inline-flex items-center justify-center gap-2 \
-         rounded-md font-medium whitespace-nowrap transition-colors \
-         disabled:pointer-events-none disabled:opacity-50",
+         rounded-md font-medium whitespace-nowrap \
+         disabled:opacity-50 disabled:cursor-not-allowed",
         variant: ButtonVariant = ButtonVariant::Default,
         size:    ButtonSize    = ButtonSize::Md,
     ),
 )]
-#[struct_fields( hover_count: usize = 0)]
+#[struct_fields(hover_count: usize = 0)]
+#[allow(unused_variables)]
 #[derive(Clone, PartialEq)]
 pub fn Button() {
-    // `style` = base style + variant.resolve() + size.resolve() + user overrides.
+    // `style` = base + variant.resolve() + size.resolve() + user overrides.
     let tip = tooltip.as_deref().unwrap_or("");
+    let tip: &'static str = Box::leak(tip.to_string().into_boxed_str());
 
-    Div()
+    div()
         .merge_style(style.clone())
-        .disabled(*disabled)
-        .focusable(true)
-        .accessibility(accessibility.clone())
-        .event_handlers(event_handlers.clone())
         .children(children.clone())
-        .child(label().text(tip))
+        .event_handlers(event_handlers.clone())
+        .accessibility(accessibility.clone())
+        .semantic_events(semantic_events.clone())
+        .child(text(tip))
 }
 
 // ── Standalone extensions on a hand-written struct ──────────────────
 
 /// A very small wrapper used for pure styling, no component.
-#[extensions(style)]
+#[extensions(styled)]
 #[derive(Clone, PartialEq, Default)]
 pub struct Chip {
     pub text: String,
@@ -911,35 +1111,26 @@ impl Chip {
     }
 }
 
-fn render_chip(chip: Chip) -> impl IntoElement {
-    let chip = chip.bg_slate_100().text_slate_800().px_2().py_1();
-    label().text(chip.text.as_str())
-}
-
 // ── Usage ────────────────────────────────────────────────────────────
 
 fn app() -> impl IntoElement {
-    use_init_cn_theme(Theme::light().base_color("slate").theme_color("blue"));
+    use_init_theme_registry(include_str!("../themes/default-dark.json"));
 
     let mut b = Button()
         .variant("destructive")       // base layer
         .size(ButtonSize::Lg)         // base layer
         .tooltip("Save the current document")
         .disabled(false)
-        .bg_green_50()                // override — wins over the variant
+        .bg(green_50())               // override — wins over the variant
         .p_6()                        // override — wins over the size
         .corner_radius(12.0)
-        .shadow_md()
-        .style("font-semibold border-2 border-slate-200")
-        .child(label().text("Save"));
+        .style("font-semibold border-2 border-neutral-200")
+        .child(text("Save"));
 
     b.hover_count = 3;
 
     // Change the variant after the fact. Base recomputes; overrides persist.
     b.variant("outline");
-
-    let chip = Chip::new("Beta");
-    let _ = render_chip(chip);
 
     b
 }
@@ -975,16 +1166,38 @@ return mechanism.
 
 **Why does the style merge happen at render time, not construction time?**
 
-Because `Variant::resolve()` reads the active theme. Resolving at
+Because `ComponentVariant::resolve()` reads the active theme. Resolving at
 construction time would freeze the theme — dark/light toggles, theme
 switches, and any dynamic theming would be invisible to already-built
 components. Rendering happens inside a Freya context, so it's the natural
 place to read the theme.
 
-The cost is one parse + one merge per variant per render, plus one parse for
-the base style when present. For a typical button that's three parses and
-four merges. It's cheap relative to the renderer's work. If it ever shows up
-in a profile, memoizing per `(component, theme)` is straightforward.
+The cost is one parse + one merge per variant per render, plus one parse
+for the base style when present. For a typical button that's three parses
+and four merges. It's cheap relative to the renderer's work. If it ever
+shows up in a profile, memoizing per `(component, theme)` is
+straightforward.
+
+**Why does `resolve()` start from `Style::bare()`?**
+
+Because `merge_style` copies any field that differs from `bare()`. If
+`resolve()` started from `Style::default()`, its theme-seeded fields (`text_color = foreground`,
+`background = background`, `font_size`, …)
+would look "explicitly set" and be copied back, overwriting whatever the
+variant's class string actually touched. The
+[Style::bare () invariant](#the-stylebare-invariant) section covers this in
+full.
+
+**Why does the `styled` extension's `self.style` start from
+`Style::bare()` too?**
+
+Same reason. `.style("…")` / `.bg(..)` / `.p_4()` chain writes to
+`self.style`. Starting from `Style::default()` would seed the field with
+theme defaults on construction, and `merge_style(&self.style)` would copy
+those seeded values back over the variant's class strings. Starting from
+`bare()` keeps the field a **sparse patch** — only the fields the user
+explicitly set are non-bare, so the merge only copies what the user
+intended.
 
 **Why does the base style live inside `variants(...)` and not `props(...)`?**
 
@@ -993,20 +1206,21 @@ storage field, no setter, and no read from the render body. It only exists
 to seed the merge chain. Grouping it with `variants(...)` keeps the entire
 style-resolution story in one syntactic place: base → variants → user
 overrides. It also makes the dependency obvious: both the base and the
-variants need `ext(style)`, so the compile error fires from the same block.
+variants need `ext(styled)`, so the compile error fires from the same
+block.
 
 **Why does the base come *first* in the merge chain?**
 
 So variants and user overrides can win over it. This mirrors shadcn's
 `cn(base, variant, size, user)` layering: the base is the least specific
-declaration and the user's `.bg_green_50()` is the most specific. If the
+declaration and the user's `.bg(green_50())` is the most specific. If the
 base came last, it would silently override every variant style — the
 opposite of what a "base" means.
 
 **Why do user overrides persist across variant changes?**
 
 Because intent should not be discarded silently. If a caller explicitly
-set `.bg_green_50()`, they meant it. Changing the variant only changes the *base* style; the override remains until the
+set `.bg(green_50())`, they meant it. Changing the variant only changes the *base* style; the override remains until the
 caller changes it. This is
 consistent with how shadcn/ui and similar layered systems behave — the
 user's overrides always win.
@@ -1015,11 +1229,15 @@ user's overrides always win.
 
 Because the macros emit paths that point at `freyacn` types (`::freyacn::prelude::Component`,
 `::freyacn::prelude::Style`,
-`::freyacn::prelude::Variant`, …). Exposing `freyacn-macros` as an end-user
-dependency would mean users who pull it directly also have to pull
-`freyacn`, and could end up with mismatched versions if they pin them
+`::freyacn::prelude::ComponentVariant`, …). Exposing `freyacn-macros` as
+an end-user dependency would mean users who pull it directly also have to
+pull `freyacn`, and could end up with mismatched versions if they pin them
 independently. Re-exporting from `freyacn` keeps the version surface a
 single crate.
+
+The `crate = <path>` override exists so internal crates that the facade
+depends on (`freyacn-shadcn`, etc.) can use the macros without depending
+on the facade.
 
 **Why `impl Into<Option<T>>` for optional setters?**
 
@@ -1069,23 +1287,28 @@ sees the stub, so the stub never fires.
 
 The following items are planned but not yet implemented:
 
-* **`resolve_with(&Theme)`.** `.resolve()` requires a Freya render context.
-  A theme-explicit variant is planned for tests and out-of-render use. This
-  requires threading the theme through the palette lookup machinery, which
-  is a standalone change.
+* **`resolve_with(&Theme)`.** `ComponentVariant::resolve()` requires a
+  Freya render context. A theme-explicit variant is planned for tests and
+  out-of-render use. This requires threading the theme through the palette
+  lookup machinery, which is a standalone change.
 * **Auto-set position when a side is set.** Setting `.top(10.0)` without a
   position kind currently leaves the value stranded. A behaviour decision is
   pending.
 * **More built-in extensions.** More bundles will land once the current
   surface stabilises.
+* **Auto-wire semantic events.** The `semantic_events` extension currently
+  only stores the callbacks; the render body must call
+  `attach_pointer_handlers` / `use_semantic_focus_events` manually. An
+  "auto-wire" mode that emits the plumbing from the macro would need a
+  post-body emission slot the extension system doesn't currently have.
 
 ---
 
 ## Contributing
 
-This crate is unstable and moves fast. Before opening a PR, please open an
-issue describing what you want to change and why — the API surface is still
-in flux, and a quick design discussion will save everyone time.
+This crate moves fast. Before opening a PR, please open an issue describing
+what you want to change and why — the API surface is still in flux, and a
+quick design discussion will save everyone time.
 
 ---
 
@@ -1095,3 +1318,5 @@ MIT.
 
 [freyacn]: https://github.com/freyacn
 [freya]: https://crates.io/crates/freya
+
+```

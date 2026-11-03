@@ -1,9 +1,21 @@
 //! Bundles of code generated for each `#[extensions(...)]` name.
+//!
+//! The crate that the generated code refers to is configurable via a
+//! leading `crate = <path>` argument. It defaults to `::freyacn` (the facade).
+//!
+//! ```ignore
+//! #[extensions(children, key, styled)]
+//! pub struct MyStruct { /* ... */ }
+//!
+//! #[extensions(crate = freyacn_core, children, key, styled)]
+//! pub struct MyStruct { /* ... */ }
+//! ```
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
-use syn::{Error, Fields, Ident, ItemStruct, LitStr, Token, punctuated::Punctuated};
+use syn::{Error, Fields, Ident, ItemStruct, LitStr, Path, Token};
 
 // ---------------------------------------------------------------------------
 // Supported extensions
@@ -15,6 +27,7 @@ const SUPPORTED: &[&str] = &[
     "styled",
     "event_handlers",
     "accessibility",
+    "semantic_events",
 ];
 
 fn dependencies_of(name: &str) -> &'static [&'static str] {
@@ -29,19 +42,49 @@ fn dependencies_of(name: &str) -> &'static [&'static str] {
 
 pub struct ExtensionNames {
     pub names: Vec<String>,
+    pub krate: Option<Path>,
 }
 
 impl Parse for ExtensionNames {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let parsed = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-        Ok(Self {
-            names: parsed.into_iter().map(|i| i.to_string()).collect(),
-        })
+        let mut names = Vec::new();
+        let mut krate: Option<Path> = None;
+
+        while !input.is_empty() {
+            // `Ident::parse_any` is required to peek/consume the `crate`
+            // keyword; `peek(Token![crate])` and `Ident::parse` both filter
+            // it out and would produce "expected identifier, found keyword".
+            let is_crate = {
+                let fork = input.fork();
+                fork.call(Ident::parse_any)
+                    .map(|id| id == "crate")
+                    .unwrap_or(false)
+            };
+
+            if is_crate {
+                let _ = input.call(Ident::parse_any)?;
+                input.parse::<Token![=]>()?;
+                if krate.is_some() {
+                    return Err(input.error("duplicate `crate = ...` argument"));
+                }
+                krate = Some(input.parse()?);
+            } else {
+                let ident: Ident = input.parse()?;
+                names.push(ident.to_string());
+            }
+
+            if input.is_empty() {
+                break;
+            }
+            input.parse::<Token![,]>()?;
+        }
+
+        Ok(Self { names, krate })
     }
 }
 
-pub fn parse_names(attr: TokenStream2) -> syn::Result<Vec<String>> {
-    Ok(syn::parse2::<ExtensionNames>(attr)?.names)
+pub fn parse_args(attr: TokenStream2) -> syn::Result<ExtensionNames> {
+    syn::parse2(attr)
 }
 
 // ---------------------------------------------------------------------------
@@ -52,9 +95,10 @@ pub fn field_names_for(name: &str) -> &'static [&'static str] {
     match name {
         "children" => &["children"],
         "key" => &["key"],
-        "styled" => &["styled"],
+        "styled" => &["style"],
         "event_handlers" => &["event_handlers"],
         "accessibility" => &["accessibility"],
+        "semantic_events" => &["semantic_events"],
         _ => &[],
     }
 }
@@ -78,6 +122,7 @@ struct Extension {
 }
 
 fn extension_for(
+    krate: &Path,
     name: &str,
     struct_name: &Ident,
     variant_field_names: &[Ident],
@@ -87,15 +132,15 @@ fn extension_for(
         "children" => Extension {
             fields: vec![quote! {
                 /// Child elements attached to this component.
-                pub children: ::std::vec::Vec<::freyacn::prelude::Element>
+                pub children: ::std::vec::Vec<#krate::prelude::Element>
             }],
             inits: vec![quote! { children: ::std::vec::Vec::new() }],
             locals: vec![quote! {
-                let children: &::std::vec::Vec<::freyacn::prelude::Element> = &self.children;
+                let children: &::std::vec::Vec<#krate::prelude::Element> = &self.children;
             }],
             impls: vec![quote! {
-                impl ::freyacn::prelude::ChildrenExt for #struct_name {
-                    fn get_children(&mut self) -> &mut ::std::vec::Vec<::freyacn::prelude::Element> {
+                impl #krate::prelude::ChildrenExt for #struct_name {
+                    fn children_mut(&mut self) -> &mut ::std::vec::Vec<#krate::prelude::Element> {
                         &mut self.children
                     }
                 }
@@ -105,41 +150,46 @@ fn extension_for(
         "key" => Extension {
             fields: vec![quote! {
                 /// The element's diff key.
-                pub key: ::freyacn::prelude::DiffKey
+                pub key: #krate::prelude::DiffKey
             }],
-            inits: vec![quote! { key: ::freyacn::prelude::DiffKey::None }],
+            inits: vec![quote! { key: #krate::prelude::DiffKey::None }],
             locals: vec![quote! {
-                let key: &::freyacn::prelude::DiffKey = &self.key;
+                let key: &#krate::prelude::DiffKey = &self.key;
             }],
             impls: vec![quote! {
-                impl ::freyacn::prelude::KeyExt for #struct_name {
-                    fn write_key(&mut self) -> &mut ::freyacn::prelude::DiffKey {
+                impl #krate::prelude::KeyExt for #struct_name {
+                    fn key_mut(&mut self) -> &mut #krate::prelude::DiffKey {
                         &mut self.key
-                    }
-                }
-                impl #struct_name {
-                    fn render_key(&self) -> DiffKey {
-                        self.key.clone().or(self.default_key())
                     }
                 }
             }],
         },
 
         // -------------------------------------------------------------------
-        // style  →  freyacn_core::StyleExt
+        // styled → Style / StyledExt
         // -------------------------------------------------------------------
         //
-        // The `style` field is a plain `Style` — the user's override layer.
-        // At render time, `#[component]` builds the effective style by
-        // folding in order:
+        // `Style::merge_style` and `StyledExt::style` are both chainable:
+        // they consume `self` and return a new `Style`. The generated fold
+        // therefore threads `__freyacn_base` by value and reassigns:
         //
-        //     Style::default()
-        //       .style(<base>)           // optional, from variants("...")
-        //       .merge(variant.resolve()) // per variant, declaration order
-        //       .merge(self.style.clone())// user overrides
+        //     __freyacn_base = StyledExt::style(__freyacn_base, base);
+        //     __freyacn_base = __freyacn_base.merge_style(&variant);
+        //     __freyacn_base = __freyacn_base.merge_style(&user);
         //
-        // If neither a base style nor variants are declared, the local
-        // binding is just `&self.style` — a cheap fast path with no merge.
+        // `merge_style` takes `&Style`, hence the `&` on each argument.
+        //
+        // `self.style` is initialised with `Style::bare()`, not
+        // `Style::default()`. That keeps it a *sparse patch*: only fields
+        // the user explicitly set via `.style("…")` / `.bg(..)` /
+        // `.text_color(..)` / etc. are non-bare, so `merge_style` copies
+        // exactly those fields and leaves theme defaults intact.
+        //
+        // Starting from `Style::default()` would seed `text_color =
+        // theme.foreground`, `background = theme.background`, etc., and
+        // merging that back would silently overwrite the variant's
+        // `text-primary-foreground` (or any other class-string colour
+        // the variant set).
         "styled" => {
             let has_base = base_style.is_some();
             let has_variants = !variant_field_names.is_empty();
@@ -147,59 +197,56 @@ fn extension_for(
             let locals = if !has_base && !has_variants {
                 // Fast path: nothing to merge.
                 vec![quote! {
-                    let style: &::freyacn::prelude::Style = &self.style;
+                    let style: &#krate::styling::Style = &self.style;
                 }]
             } else {
-                // Fold chain: base (optional) → each variant → user overrides.
                 let base_assign = match base_style {
                     Some(lit) => quote! {
-                        __freyacn_base = ::freyacn::prelude::StyleExt::style(
-                            __freyacn_base,
-                            #lit,
-                        );
+                        __freyacn_base =
+                            #krate::styling::StyledExt::style(__freyacn_base, #lit);
                     },
                     None => quote! {},
                 };
 
                 let merges = variant_field_names.iter().map(|field| {
                     quote! {
-                        __freyacn_base = __freyacn_base.merge(
-                            ::freyacn::prelude::Variant::resolve(&self.#field)
+                        __freyacn_base = __freyacn_base.merge_style(
+                            &#krate::prelude::ComponentVariant::resolve(&self.#field)
                         );
                     }
                 });
 
                 vec![quote! {
-                    let __freyacn_merged_style: ::freyacn::prelude::Style = {
+                    let __freyacn_merged_style: #krate::styling::Style = {
                         let mut __freyacn_base =
-                            <::freyacn::prelude::Style as ::core::default::Default>::default();
+                            <#krate::styling::Style as ::core::default::Default>::default();
                         #base_assign
                         #(#merges)*
-                        __freyacn_base.merge(self.style.clone())
+                        __freyacn_base.merge_style(&self.style)
                     };
-                    let style: &::freyacn::prelude::Style = &__freyacn_merged_style;
+                    let style: &#krate::styling::Style = &__freyacn_merged_style;
                 }]
             };
 
             Extension {
                 fields: vec![quote! {
                     /// Accumulated user overrides.
-                    ///
-                    /// Holds the style applied via [`StyleExt`] methods.
-                    /// If the component declares a base style in
-                    /// `variants("...")` or any variant props, those are
-                    /// merged on top of this field at render time — see the
-                    /// component macro's generated `render` body for
-                    /// details.
-                    pub style: ::freyacn::prelude::Style
+                    pub style: #krate::styling::Style
                 }],
                 inits: vec![quote! {
-                    style: <::freyacn::prelude::Style as ::core::default::Default>::default()
+                    // `Style::bare()` — sparse patch on top of the theme
+                    // defaults assembled by `#[component]`. Do NOT use
+                    // `Style::default()` here: it would re-introduce
+                    // theme values (`text_color = foreground`,
+                    // `background = background`, …) on every merge and
+                    // silently overwrite variant class strings such as
+                    // `text-primary-foreground`.
+                    style: #krate::styling::Style::bare()
                 }],
                 locals,
                 impls: vec![quote! {
-                    impl ::freyacn::prelude::StyledExt for #struct_name {
-                        fn get_style(&mut self) -> &mut ::freyacn::prelude::Style {
+                    impl #krate::styling::StyledExt for #struct_name {
+                        fn get_style(&mut self) -> &mut #krate::styling::Style {
                             &mut self.style
                         }
                     }
@@ -211,25 +258,25 @@ fn extension_for(
             fields: vec![quote! {
                 /// Event-handler registry.
                 pub event_handlers:
-                    ::freyacn::prelude::FxHashMap<::freyacn::prelude::EventName, ::freyacn::prelude::EventHandlerType>
+                    #krate::prelude::FxHashMap<#krate::prelude::EventName, #krate::prelude::EventHandlerType>
             }],
             inits: vec![quote! {
                 event_handlers:
-                    <::freyacn::prelude::FxHashMap<_, _> as ::core::default::Default>::default()
+                    <#krate::prelude::FxHashMap<_, _> as ::core::default::Default>::default()
             }],
             locals: vec![quote! {
-                let event_handlers: &::freyacn::prelude::FxHashMap<
-                    ::freyacn::prelude::EventName,
-                    ::freyacn::prelude::EventHandlerType,
+                let event_handlers: &#krate::prelude::FxHashMap<
+                    #krate::prelude::EventName,
+                    #krate::prelude::EventHandlerType,
                 > = &self.event_handlers;
             }],
             impls: vec![quote! {
-                impl ::freyacn::prelude::EventHandlersExt for #struct_name {
-                    fn get_event_handlers(
+                impl #krate::prelude::EventHandlersExt for #struct_name {
+                    fn event_handlers_mut(
                         &mut self,
-                    ) -> &mut ::freyacn::prelude::FxHashMap<
-                        ::freyacn::prelude::EventName,
-                        ::freyacn::prelude::EventHandlerType,
+                    ) -> &mut #krate::prelude::FxHashMap<
+                        #krate::prelude::EventName,
+                        #krate::prelude::EventHandlerType,
                     > {
                         &mut self.event_handlers
                     }
@@ -237,30 +284,44 @@ fn extension_for(
             }],
         },
 
-        // -------------------------------------------------------------------
-        // accessibility  →  freyacn_core::AccessibilityExt
-        // -------------------------------------------------------------------
         "accessibility" => Extension {
             fields: vec![quote! {
                 /// Accessibility data for this element.
-                ///
-                /// Populated via the [`AccessibilityExt`] builder methods
-                /// (`a11y_role`, `a11y_alt`, `a11y_focusable`, …) and
-                /// forwarded to the primitive when the component renders.
-                pub accessibility: ::freyacn::prelude::AccessibilityData
+                pub accessibility: #krate::prelude::AccessibilityData
             }],
             inits: vec![quote! {
-                accessibility: <::freyacn::prelude::AccessibilityData as ::core::default::Default>::default()
+                accessibility: <#krate::prelude::AccessibilityData as ::core::default::Default>::default()
             }],
             locals: vec![quote! {
-                let accessibility: &::freyacn::prelude::AccessibilityData = &self.accessibility;
+                let accessibility: &#krate::prelude::AccessibilityData = &self.accessibility;
             }],
             impls: vec![quote! {
-                impl ::freyacn::prelude::AccessibilityExt for #struct_name {
-                    fn get_accessibility_data(
+                impl #krate::prelude::AccessibilityExt for #struct_name {
+                    fn accessibility_data_mut(
                         &mut self,
-                    ) -> &mut ::freyacn::prelude::AccessibilityData {
+                    ) -> &mut #krate::prelude::AccessibilityData {
                         &mut self.accessibility
+                    }
+                }
+            }],
+        },
+
+        "semantic_events" => Extension {
+            fields: vec![quote! {
+                /// Semantic events (hover / press / focus callbacks) attached
+                /// to this component.
+                pub semantic_events: #krate::prelude::SemanticEvents
+            }],
+            inits: vec![quote! {
+                semantic_events: <#krate::prelude::SemanticEvents as ::core::default::Default>::default()
+            }],
+            locals: vec![quote! {
+                let semantic_events: &#krate::prelude::SemanticEvents = &self.semantic_events;
+            }],
+            impls: vec![quote! {
+                impl #krate::prelude::HasSemanticEvents for #struct_name {
+                    fn semantic_events_mut(&mut self) -> &mut #krate::prelude::SemanticEvents {
+                        &mut self.semantic_events
                     }
                 }
             }],
@@ -292,16 +353,8 @@ pub struct ExtensionsCode {
     pub trait_impls: Vec<TokenStream2>,
 }
 
-/// Collect every extension bundle requested in `names`.
-///
-/// `base_style` is an optional leading string literal parsed from
-/// `variants("…")` inside `#[component]`. It is folded into the
-/// generated `style` local, below variant stylesheet and user overrides —
-/// matching shadcn's `cn(base, variant, size, user)` layering.
-///
-/// Standalone `#[extensions(...)]` has no variant context, so it passes
-/// `None`.
 pub fn collect(
+    krate: &Path,
     struct_name: &Ident,
     names: &[String],
     variant_field_names: &[Ident],
@@ -327,7 +380,7 @@ pub fn collect(
             }
         }
 
-        let ext = extension_for(name, struct_name, variant_field_names, base_style)?;
+        let ext = extension_for(krate, name, struct_name, variant_field_names, base_style)?;
         out.field_defs.extend(ext.fields);
         out.field_inits.extend(ext.inits);
         out.local_bindings.extend(ext.locals);
@@ -345,10 +398,11 @@ pub fn parse_extensions(attr: TokenStream2, item: TokenStream2) -> syn::Result<T
     let item_struct: ItemStruct = syn::parse2(item)?;
     let struct_name = item_struct.ident.clone();
 
-    let names = parse_names(attr)?;
-    // Standalone extensions never have variant or base-style context —
-    // those are `#[component(...)]` concepts.
-    let code = collect(&struct_name, &names, &[], None)?;
+    let args = parse_args(attr)?;
+    let krate: Path = args.krate.unwrap_or_else(|| syn::parse_quote!(::freyacn));
+    let names = args.names;
+
+    let code = collect(&krate, &struct_name, &names, &[], None)?;
 
     let Fields::Named(named) = &item_struct.fields else {
         return Err(Error::new_spanned(
