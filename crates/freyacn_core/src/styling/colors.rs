@@ -52,6 +52,25 @@ pub struct StyledColor {
     opacity: f32,
 }
 
+/// Clamp a `f32` to `[0.0, 1.0]`, treating `NaN` as `0.0`.
+///
+/// `const`-compatible: uses the `a != a` NaN test (which is a genuine
+/// inequality only for `NaN`) so it works in `const fn` bodies without
+/// relying on `f32::is_nan` being `const` on every supported compiler.
+#[inline]
+const fn clamp_unit(a: f32) -> f32 {
+    if a != a {
+        // NaN
+        0.0
+    } else if a < 0.0 {
+        0.0
+    } else if a > 1.0 {
+        1.0
+    } else {
+        a
+    }
+}
+
 impl StyledColor {
     // ---- Constructors ----
 
@@ -63,26 +82,21 @@ impl StyledColor {
         }
     }
 
-    /// Solid color with an ARGB alpha (`0..=255`).
-    pub fn argb(a: u8, r: u8, g: u8, b: u8) -> Self {
+    /// Solid colour from separate `(a, r, g, b)` byte components, in
+    /// that order. Equivalent to `rgba(r, g, b, a as f32 / 255.0)`.
+    pub const fn argb(a: u8, r: u8, g: u8, b: u8) -> Self {
         Self {
             fill: Fill::Color(Color::from_rgb(r, g, b)),
             opacity: a as f32 / 255.0,
         }
     }
 
-    /// Solid color with an explicit `0.0..=1.0` opacity.
-    pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Self {
-        let a = if a < 0.0 {
-            0.0
-        } else if a > 1.0 {
-            1.0
-        } else {
-            a
-        };
+    /// Solid color with an explicit `0.0..=1.0` opacity. Values outside
+    /// the range (and `NaN`) are clamped to `[0.0, 1.0]` (`NaN` → `0.0`).
+    pub const fn rgba(r: u8, g: u8, b: u8, a: f32) -> Self {
         Self {
             fill: Fill::Color(Color::from_rgb(r, g, b)),
-            opacity: a,
+            opacity: clamp_unit(a),
         }
     }
 
@@ -123,29 +137,22 @@ impl StyledColor {
     // ---- Modifiers ----
 
     /// Override the opacity multiplier (`0.0` transparent, `1.0` opaque).
-    /// Ignored for non-solid fills.
+    /// Ignored for non-solid fills. Values outside the range (and `NaN`)
+    /// are clamped to `[0.0, 1.0]` (`NaN` → `0.0`).
     pub const fn opacity(mut self, opacity: f32) -> Self {
-        self.opacity = if opacity < 0.0 {
-            0.0
-        } else if opacity > 1.0 {
-            1.0
-        } else {
-            opacity
-        };
+        self.opacity = clamp_unit(opacity);
         self
     }
 
     /// Multiply the existing opacity by `factor`. Ignored for non-solid
     /// fills.
+    ///
+    /// `factor` is clamped to `[0.0, 1.0]` **before** multiplication, so
+    /// this method can only reduce (or leave unchanged) the current
+    /// opacity — it cannot brighten past the existing value. `NaN` is
+    /// treated as `0.0` (fully transparent).
     pub const fn with_opacity(mut self, factor: f32) -> Self {
-        let f = if factor < 0.0 {
-            0.0
-        } else if factor > 1.0 {
-            1.0
-        } else {
-            factor
-        };
-        self.opacity *= f;
+        self.opacity *= clamp_unit(factor);
         self
     }
 
@@ -302,6 +309,8 @@ pub const fn black() -> StyledColor {
     StyledColor::rgb(0, 0, 0)
 }
 /// Fully transparent (`rgba(0, 0, 0, 0)`). Tailwind's `transparent`.
+///
+/// Returns a **solid** `Fill::Color` with alpha `0`, not `Fill::None`.
 pub const fn transparent() -> StyledColor {
     StyledColor::rgb(0, 0, 0).opacity(0.0)
 }

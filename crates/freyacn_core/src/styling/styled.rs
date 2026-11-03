@@ -3,7 +3,7 @@ use crate::styling::colors::{StyledColor, black};
 use crate::styling::style::Style;
 use crate::styling::style_variants::StyleVariant;
 use crate::styling::styled_string::StyledString;
-use crate::theme::{ComponentState, Theme};
+use crate::theme::{ComponentState, Theme, active_theme};
 use freya_core::data::Overflow;
 use freya_core::layers::Layer;
 use freya_core::prelude::{
@@ -197,57 +197,64 @@ pub trait StyledExt: Sized {
         self
     }
 
-    /// Extra-extra-small text — `12px`.
+    // ---- font size: theme-driven shortcuts ----
+    //
+    // Resolves `typography.fontSize.<key>` from the active theme. Each
+    // shortcut accepts its own key plus (for `text_md`) the `base` alias
+    // that `Style::default()` reads, so a theme that only defines
+    // `fontSize.base` still drives `text_md()`.
+
+    /// Extra-extra-small — `12px`. Resolves theme `fontSize.xs`.
     fn text_xs(self) -> Self {
-        self.font_size(12.0)
+        self.font_size(active_theme().font_size_or(&["xs"], 12.0))
     }
-    /// Small text — `14px`.
+    /// Small — `14px`. Resolves theme `fontSize.sm`.
     fn text_sm(self) -> Self {
-        self.font_size(14.0)
+        self.font_size(active_theme().font_size_or(&["sm"], 14.0))
     }
-    /// Base text — `16px`.
+    /// Base — `16px`. Resolves theme `fontSize.md` or `fontSize.base`.
     fn text_md(self) -> Self {
-        self.font_size(16.0)
+        self.font_size(active_theme().font_size_or(&["md", "base"], 16.0))
     }
-    /// Large text — `18px`.
+    /// Large — `18px`. Resolves theme `fontSize.lg`.
     fn text_lg(self) -> Self {
-        self.font_size(18.0)
+        self.font_size(active_theme().font_size_or(&["lg"], 18.0))
     }
-    /// Extra-large text — `20px`.
+    /// Extra-large — `20px`. Resolves theme `fontSize.xl`.
     fn text_xl(self) -> Self {
-        self.font_size(20.0)
+        self.font_size(active_theme().font_size_or(&["xl"], 20.0))
     }
-    /// 2× extra-large text — `24px`.
+    /// 2× extra-large — `24px`. Resolves theme `fontSize.2xl`.
     fn text_2xl(self) -> Self {
-        self.font_size(24.0)
+        self.font_size(active_theme().font_size_or(&["2xl"], 24.0))
     }
-    /// 3× extra-large text — `30px`.
+    /// 3× extra-large — `30px`. Resolves theme `fontSize.3xl`.
     fn text_3xl(self) -> Self {
-        self.font_size(30.0)
+        self.font_size(active_theme().font_size_or(&["3xl"], 30.0))
     }
-    /// 4× extra-large text — `36px`.
+    /// 4× extra-large — `36px`. Resolves theme `fontSize.4xl`.
     fn text_4xl(self) -> Self {
-        self.font_size(36.0)
+        self.font_size(active_theme().font_size_or(&["4xl"], 36.0))
     }
-    /// 5× extra-large text — `48px`.
+    /// 5× extra-large — `48px`. Resolves theme `fontSize.5xl`.
     fn text_5xl(self) -> Self {
-        self.font_size(48.0)
+        self.font_size(active_theme().font_size_or(&["5xl"], 48.0))
     }
-    /// 6× extra-large text — `60px`.
+    /// 6× extra-large — `60px`. Resolves theme `fontSize.6xl`.
     fn text_6xl(self) -> Self {
-        self.font_size(60.0)
+        self.font_size(active_theme().font_size_or(&["6xl"], 60.0))
     }
-    /// 7× extra-large text — `72px`.
+    /// 7× extra-large — `72px`. Resolves theme `fontSize.7xl`.
     fn text_7xl(self) -> Self {
-        self.font_size(72.0)
+        self.font_size(active_theme().font_size_or(&["7xl"], 72.0))
     }
-    /// 8× extra-large text — `96px`.
+    /// 8× extra-large — `96px`. Resolves theme `fontSize.8xl`.
     fn text_8xl(self) -> Self {
-        self.font_size(96.0)
+        self.font_size(active_theme().font_size_or(&["8xl"], 96.0))
     }
-    /// 9× extra-large text — `128px`.
+    /// 9× extra-large — `128px`. Resolves theme `fontSize.9xl`.
     fn text_9xl(self) -> Self {
-        self.font_size(128.0)
+        self.font_size(active_theme().font_size_or(&["9xl"], 128.0))
     }
 
     // ---- font weight ----
@@ -261,41 +268,65 @@ pub trait StyledExt: Sized {
         self
     }
 
-    /// Hairline weight (`100`).
+    // ---- font weight: theme-driven shortcuts ----
+    //
+    // Resolves `typography.fontWeight.<key>` from the active theme,
+    // falling back to the standard CSS weight. `font_semibold` also accepts
+    // `"semi_bold"` as an alias.
+
+    /// Hairline — `100`. Resolves theme `fontWeight.thin`.
     fn font_thin(self) -> Self {
-        self.font_weight(FontWeight::THIN)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["thin"], 100),
+        ))
     }
-    /// Extra-light weight (`200`).
+    /// Extra-light — `200`. Resolves theme `fontWeight.extralight`.
     fn font_extralight(self) -> Self {
-        self.font_weight(FontWeight::EXTRA_LIGHT)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["extralight", "extra_light"], 200),
+        ))
     }
-    /// Light weight (`300`).
+    /// Light — `300`. Resolves theme `fontWeight.light`.
     fn font_light(self) -> Self {
-        self.font_weight(FontWeight::LIGHT)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["light"], 300),
+        ))
     }
-    /// Regular weight (`400`). This is the default.
+    /// Regular — `400`. Resolves theme `fontWeight.normal` or `fontWeight.base`.
     fn font_normal(self) -> Self {
-        self.font_weight(FontWeight::NORMAL)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["normal", "base"], 400),
+        ))
     }
-    /// Medium weight (`500`).
+    /// Medium — `500`. Resolves theme `fontWeight.medium`.
     fn font_medium(self) -> Self {
-        self.font_weight(FontWeight::MEDIUM)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["medium"], 500),
+        ))
     }
-    /// Semi-bold weight (`600`).
+    /// Semi-bold — `600`. Resolves theme `fontWeight.semibold`.
     fn font_semibold(self) -> Self {
-        self.font_weight(FontWeight::SEMI_BOLD)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["semibold", "semi_bold"], 600),
+        ))
     }
-    /// Bold weight (`700`).
+    /// Bold — `700`. Resolves theme `fontWeight.bold`.
     fn font_bold(self) -> Self {
-        self.font_weight(FontWeight::BOLD)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["bold"], 700),
+        ))
     }
-    /// Extra-bold weight (`800`).
+    /// Extra-bold — `800`. Resolves theme `fontWeight.extrabold`.
     fn font_extrabold(self) -> Self {
-        self.font_weight(FontWeight::EXTRA_BOLD)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["extrabold", "extra_bold"], 800),
+        ))
     }
-    /// Black/heavy weight (`900`).
+    /// Black/heavy — `900`. Resolves theme `fontWeight.black`.
     fn font_black(self) -> Self {
-        self.font_weight(FontWeight::BLACK)
+        self.font_weight(weight_to_font_weight(
+            active_theme().font_weight_or(&["black"], 900),
+        ))
     }
 
     // ---- letter spacing ----
@@ -413,8 +444,12 @@ pub trait StyledExt: Sized {
         self
     }
 
-    /// Replace the font stack with the default sans-serif stack.
+    /// Replace the font stack with the theme's `fontFamily.sans` stack,
+    /// falling back to the built-in sans stack.
     fn font_sans(self) -> Self {
+        if let Some(stack) = active_theme().font_family_stack("sans") {
+            return self.clear_font_families().font_families(stack);
+        }
         self.clear_font_families().font_families([
             "ui-sans-serif",
             "system-ui",
@@ -426,8 +461,12 @@ pub trait StyledExt: Sized {
         ])
     }
 
-    /// Replace the font stack with the default serif stack.
+    /// Replace the font stack with the theme's `fontFamily.serif` stack,
+    /// falling back to the built-in serif stack.
     fn font_serif(self) -> Self {
+        if let Some(stack) = active_theme().font_family_stack("serif") {
+            return self.clear_font_families().font_families(stack);
+        }
         self.clear_font_families().font_families([
             "ui-serif",
             "Georgia",
@@ -438,8 +477,12 @@ pub trait StyledExt: Sized {
         ])
     }
 
-    /// Replace the font stack with the default monospace stack.
+    /// Replace the font stack with the theme's `fontFamily.mono` stack,
+    /// falling back to the built-in monospace stack.
     fn font_mono(self) -> Self {
+        if let Some(stack) = active_theme().font_family_stack("mono") {
+            return self.clear_font_families().font_families(stack);
+        }
         self.clear_font_families().font_families([
             "ui-monospace",
             "SFMono-Regular",
@@ -1746,431 +1789,434 @@ pub trait StyledExt: Sized {
 
     // ---- uniform radius ----
 
-    /// No rounding — `0px`. Tailwind's `rounded-none`.
-    fn rounded_none(self) -> Self {
-        self.radius(0.0)
-    }
-    /// Extra-small — `2px`. Tailwind's `rounded-xs`.
-    fn rounded_xs(self) -> Self {
-        self.radius(2.0)
-    }
-    /// Small — `4px`. Tailwind's `rounded-sm`.
-    fn rounded_sm(self) -> Self {
-        self.radius(4.0)
-    }
-    /// Medium — `6px`. Tailwind's `rounded-md`.
-    fn rounded_md(self) -> Self {
-        self.radius(6.0)
-    }
-    /// Large — `8px`. Tailwind's `rounded-lg`.
-    fn rounded_lg(self) -> Self {
-        self.radius(8.0)
-    }
-    /// Extra-large — `12px`. Tailwind's `rounded-xl`.
-    fn rounded_xl(self) -> Self {
-        self.radius(12.0)
-    }
-    /// 2× extra-large — `16px`. Tailwind's `rounded-2xl`.
-    fn rounded_2xl(self) -> Self {
-        self.radius(16.0)
-    }
-    /// 3× extra-large — `24px`. Tailwind's `rounded-3xl`.
-    fn rounded_3xl(self) -> Self {
-        self.radius(24.0)
-    }
-    /// 4× extra-large — `32px`. Tailwind's `rounded-4xl`.
-    fn rounded_4xl(self) -> Self {
-        self.radius(32.0)
-    }
-    /// Pill / circle — `9999px`. Tailwind's `rounded-full`.
-    fn rounded_full(self) -> Self {
-        self.radius(9999.0)
-    }
+    // ---- radius: theme-driven shortcuts ----
+    //
+    // Every shortcut resolves `radius.<key>` from the active theme,
+    // falling back to Tailwind's pixel value. The "bare" variants
+    // (`rounded`, `rounded_t`, …) look up `radius.default` so they can
+    // be overridden independently of the sized variants.
 
-    // ======== PASTE-IN REPLACEMENT ========
-    // Replaces everything in `StyledExt` from `// ---- top edge (rounded-t-*) ----`
-    // down to (and including) the closing `}` of the trait. Keep the trailing
-    // `/* ... */` usage comment that follows the trait.
+    // ---- uniform radius ----
+
+    /// No rounding — `0px`. Resolves theme `radius.none`.
+    fn rounded_none(self) -> Self {
+        self.radius(active_theme().radius_or("none", 0.0))
+    }
+    /// Extra-small — `2px`. Resolves theme `radius.xs`.
+    fn rounded_xs(self) -> Self {
+        self.radius(active_theme().radius_or("xs", 2.0))
+    }
+    /// Small — `4px`. Resolves theme `radius.sm`.
+    fn rounded_sm(self) -> Self {
+        self.radius(active_theme().radius_or("sm", 4.0))
+    }
+    /// Medium — `6px`. Resolves theme `radius.md`.
+    fn rounded_md(self) -> Self {
+        self.radius(active_theme().radius_or("md", 6.0))
+    }
+    /// Large — `8px`. Resolves theme `radius.lg`.
+    fn rounded_lg(self) -> Self {
+        self.radius(active_theme().radius_or("lg", 8.0))
+    }
+    /// Extra-large — `12px`. Resolves theme `radius.xl`.
+    fn rounded_xl(self) -> Self {
+        self.radius(active_theme().radius_or("xl", 12.0))
+    }
+    /// 2× extra-large — `16px`. Resolves theme `radius.2xl`.
+    fn rounded_2xl(self) -> Self {
+        self.radius(active_theme().radius_or("2xl", 16.0))
+    }
+    /// 3× extra-large — `24px`. Resolves theme `radius.3xl`.
+    fn rounded_3xl(self) -> Self {
+        self.radius(active_theme().radius_or("3xl", 24.0))
+    }
+    /// 4× extra-large — `32px`. Resolves theme `radius.4xl`.
+    fn rounded_4xl(self) -> Self {
+        self.radius(active_theme().radius_or("4xl", 32.0))
+    }
+    /// Pill / circle — `9999px`. Resolves theme `radius.full`.
+    fn rounded_full(self) -> Self {
+        self.radius(active_theme().radius_or("full", 9999.0))
+    }
+    /// Round all corners with the theme's default radius.
+    fn rounded(self) -> Self {
+        self.radius(active_theme().radius_or("default", 4.0))
+    }
 
     // ---- top edge (rounded-t-*) ----
 
-    /// Round the top edge with the default radius — `4px`. Tailwind's `rounded-t`.
+    /// Round the top edge with the theme's default radius.
     fn rounded_t(self) -> Self {
-        self.radius_t(4.0)
+        self.radius_t(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding on the top edge. Tailwind's `rounded-t-none`.
+    /// No rounding on the top edge. Resolves theme `radius.none`.
     fn rounded_t_none(self) -> Self {
-        self.radius_t(0.0)
+        self.radius_t(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius on the top edge. Tailwind's `rounded-t-xs`.
+    /// `2px` on the top edge. Resolves theme `radius.xs`.
     fn rounded_t_xs(self) -> Self {
-        self.radius_t(2.0)
+        self.radius_t(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius on the top edge. Tailwind's `rounded-t-sm`.
+    /// `4px` on the top edge. Resolves theme `radius.sm`.
     fn rounded_t_sm(self) -> Self {
-        self.radius_t(4.0)
+        self.radius_t(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius on the top edge. Tailwind's `rounded-t-md`.
+    /// `6px` on the top edge. Resolves theme `radius.md`.
     fn rounded_t_md(self) -> Self {
-        self.radius_t(6.0)
+        self.radius_t(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius on the top edge. Tailwind's `rounded-t-lg`.
+    /// `8px` on the top edge. Resolves theme `radius.lg`.
     fn rounded_t_lg(self) -> Self {
-        self.radius_t(8.0)
+        self.radius_t(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius on the top edge. Tailwind's `rounded-t-xl`.
+    /// `12px` on the top edge. Resolves theme `radius.xl`.
     fn rounded_t_xl(self) -> Self {
-        self.radius_t(12.0)
+        self.radius_t(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius on the top edge. Tailwind's `rounded-t-2xl`.
+    /// `16px` on the top edge. Resolves theme `radius.2xl`.
     fn rounded_t_2xl(self) -> Self {
-        self.radius_t(16.0)
+        self.radius_t(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius on the top edge. Tailwind's `rounded-t-3xl`.
+    /// `24px` on the top edge. Resolves theme `radius.3xl`.
     fn rounded_t_3xl(self) -> Self {
-        self.radius_t(24.0)
+        self.radius_t(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius on the top edge. Tailwind's `rounded-t-4xl`.
+    /// `32px` on the top edge. Resolves theme `radius.4xl`.
     fn rounded_t_4xl(self) -> Self {
-        self.radius_t(32.0)
+        self.radius_t(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) on the top edge. Tailwind's `rounded-t-full`.
+    /// Pill on the top edge. Resolves theme `radius.full`.
     fn rounded_t_full(self) -> Self {
-        self.radius_t(9999.0)
+        self.radius_t(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- right edge (rounded-r-*) ----
 
-    /// Round the right edge with the default radius — `4px`. Tailwind's `rounded-r`.
+    /// Round the right edge with the theme's default radius.
     fn rounded_r(self) -> Self {
-        self.radius_r(4.0)
+        self.radius_r(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding on the right edge. Tailwind's `rounded-r-none`.
+    /// No rounding on the right edge. Resolves theme `radius.none`.
     fn rounded_r_none(self) -> Self {
-        self.radius_r(0.0)
+        self.radius_r(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius on the right edge. Tailwind's `rounded-r-xs`.
+    /// `2px` on the right edge. Resolves theme `radius.xs`.
     fn rounded_r_xs(self) -> Self {
-        self.radius_r(2.0)
+        self.radius_r(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius on the right edge. Tailwind's `rounded-r-sm`.
+    /// `4px` on the right edge. Resolves theme `radius.sm`.
     fn rounded_r_sm(self) -> Self {
-        self.radius_r(4.0)
+        self.radius_r(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius on the right edge. Tailwind's `rounded-r-md`.
+    /// `6px` on the right edge. Resolves theme `radius.md`.
     fn rounded_r_md(self) -> Self {
-        self.radius_r(6.0)
+        self.radius_r(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius on the right edge. Tailwind's `rounded-r-lg`.
+    /// `8px` on the right edge. Resolves theme `radius.lg`.
     fn rounded_r_lg(self) -> Self {
-        self.radius_r(8.0)
+        self.radius_r(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius on the right edge. Tailwind's `rounded-r-xl`.
+    /// `12px` on the right edge. Resolves theme `radius.xl`.
     fn rounded_r_xl(self) -> Self {
-        self.radius_r(12.0)
+        self.radius_r(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius on the right edge. Tailwind's `rounded-r-2xl`.
+    /// `16px` on the right edge. Resolves theme `radius.2xl`.
     fn rounded_r_2xl(self) -> Self {
-        self.radius_r(16.0)
+        self.radius_r(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius on the right edge. Tailwind's `rounded-r-3xl`.
+    /// `24px` on the right edge. Resolves theme `radius.3xl`.
     fn rounded_r_3xl(self) -> Self {
-        self.radius_r(24.0)
+        self.radius_r(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius on the right edge. Tailwind's `rounded-r-4xl`.
+    /// `32px` on the right edge. Resolves theme `radius.4xl`.
     fn rounded_r_4xl(self) -> Self {
-        self.radius_r(32.0)
+        self.radius_r(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) on the right edge. Tailwind's `rounded-r-full`.
+    /// Pill on the right edge. Resolves theme `radius.full`.
     fn rounded_r_full(self) -> Self {
-        self.radius_r(9999.0)
+        self.radius_r(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- bottom edge (rounded-b-*) ----
 
-    /// Round the bottom edge with the default radius — `4px`. Tailwind's `rounded-b`.
+    /// Round the bottom edge with the theme's default radius.
     fn rounded_b(self) -> Self {
-        self.radius_b(4.0)
+        self.radius_b(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding on the bottom edge. Tailwind's `rounded-b-none`.
+    /// No rounding on the bottom edge. Resolves theme `radius.none`.
     fn rounded_b_none(self) -> Self {
-        self.radius_b(0.0)
+        self.radius_b(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius on the bottom edge. Tailwind's `rounded-b-xs`.
+    /// `2px` on the bottom edge. Resolves theme `radius.xs`.
     fn rounded_b_xs(self) -> Self {
-        self.radius_b(2.0)
+        self.radius_b(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius on the bottom edge. Tailwind's `rounded-b-sm`.
+    /// `4px` on the bottom edge. Resolves theme `radius.sm`.
     fn rounded_b_sm(self) -> Self {
-        self.radius_b(4.0)
+        self.radius_b(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius on the bottom edge. Tailwind's `rounded-b-md`.
+    /// `6px` on the bottom edge. Resolves theme `radius.md`.
     fn rounded_b_md(self) -> Self {
-        self.radius_b(6.0)
+        self.radius_b(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius on the bottom edge. Tailwind's `rounded-b-lg`.
+    /// `8px` on the bottom edge. Resolves theme `radius.lg`.
     fn rounded_b_lg(self) -> Self {
-        self.radius_b(8.0)
+        self.radius_b(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius on the bottom edge. Tailwind's `rounded-b-xl`.
+    /// `12px` on the bottom edge. Resolves theme `radius.xl`.
     fn rounded_b_xl(self) -> Self {
-        self.radius_b(12.0)
+        self.radius_b(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius on the bottom edge. Tailwind's `rounded-b-2xl`.
+    /// `16px` on the bottom edge. Resolves theme `radius.2xl`.
     fn rounded_b_2xl(self) -> Self {
-        self.radius_b(16.0)
+        self.radius_b(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius on the bottom edge. Tailwind's `rounded-b-3xl`.
+    /// `24px` on the bottom edge. Resolves theme `radius.3xl`.
     fn rounded_b_3xl(self) -> Self {
-        self.radius_b(24.0)
+        self.radius_b(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius on the bottom edge. Tailwind's `rounded-b-4xl`.
+    /// `32px` on the bottom edge. Resolves theme `radius.4xl`.
     fn rounded_b_4xl(self) -> Self {
-        self.radius_b(32.0)
+        self.radius_b(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) on the bottom edge. Tailwind's `rounded-b-full`.
+    /// Pill on the bottom edge. Resolves theme `radius.full`.
     fn rounded_b_full(self) -> Self {
-        self.radius_b(9999.0)
+        self.radius_b(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- left edge (rounded-l-*) ----
 
-    /// Round the left edge with the default radius — `4px`. Tailwind's `rounded-l`.
+    /// Round the left edge with the theme's default radius.
     fn rounded_l(self) -> Self {
-        self.radius_l(4.0)
+        self.radius_l(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding on the left edge. Tailwind's `rounded-l-none`.
+    /// No rounding on the left edge. Resolves theme `radius.none`.
     fn rounded_l_none(self) -> Self {
-        self.radius_l(0.0)
+        self.radius_l(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius on the left edge. Tailwind's `rounded-l-xs`.
+    /// `2px` on the left edge. Resolves theme `radius.xs`.
     fn rounded_l_xs(self) -> Self {
-        self.radius_l(2.0)
+        self.radius_l(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius on the left edge. Tailwind's `rounded-l-sm`.
+    /// `4px` on the left edge. Resolves theme `radius.sm`.
     fn rounded_l_sm(self) -> Self {
-        self.radius_l(4.0)
+        self.radius_l(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius on the left edge. Tailwind's `rounded-l-md`.
+    /// `6px` on the left edge. Resolves theme `radius.md`.
     fn rounded_l_md(self) -> Self {
-        self.radius_l(6.0)
+        self.radius_l(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius on the left edge. Tailwind's `rounded-l-lg`.
+    /// `8px` on the left edge. Resolves theme `radius.lg`.
     fn rounded_l_lg(self) -> Self {
-        self.radius_l(8.0)
+        self.radius_l(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius on the left edge. Tailwind's `rounded-l-xl`.
+    /// `12px` on the left edge. Resolves theme `radius.xl`.
     fn rounded_l_xl(self) -> Self {
-        self.radius_l(12.0)
+        self.radius_l(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius on the left edge. Tailwind's `rounded-l-2xl`.
+    /// `16px` on the left edge. Resolves theme `radius.2xl`.
     fn rounded_l_2xl(self) -> Self {
-        self.radius_l(16.0)
+        self.radius_l(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius on the left edge. Tailwind's `rounded-l-3xl`.
+    /// `24px` on the left edge. Resolves theme `radius.3xl`.
     fn rounded_l_3xl(self) -> Self {
-        self.radius_l(24.0)
+        self.radius_l(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius on the left edge. Tailwind's `rounded-l-4xl`.
+    /// `32px` on the left edge. Resolves theme `radius.4xl`.
     fn rounded_l_4xl(self) -> Self {
-        self.radius_l(32.0)
+        self.radius_l(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) on the left edge. Tailwind's `rounded-l-full`.
+    /// Pill on the left edge. Resolves theme `radius.full`.
     fn rounded_l_full(self) -> Self {
-        self.radius_l(9999.0)
+        self.radius_l(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- top-left corner (rounded-tl-*) ----
 
-    /// Round the top-left corner with the default radius — `4px`. Tailwind's `rounded-tl`.
+    /// Round the top-left corner with the theme's default radius.
     fn rounded_tl(self) -> Self {
-        self.radius_tl(4.0)
+        self.radius_tl(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding in the top-left corner. Tailwind's `rounded-tl-none`.
+    /// No rounding in the top-left corner. Resolves theme `radius.none`.
     fn rounded_tl_none(self) -> Self {
-        self.radius_tl(0.0)
+        self.radius_tl(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius in the top-left corner. Tailwind's `rounded-tl-xs`.
+    /// `2px` in the top-left corner. Resolves theme `radius.xs`.
     fn rounded_tl_xs(self) -> Self {
-        self.radius_tl(2.0)
+        self.radius_tl(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius in the top-left corner. Tailwind's `rounded-tl-sm`.
+    /// `4px` in the top-left corner. Resolves theme `radius.sm`.
     fn rounded_tl_sm(self) -> Self {
-        self.radius_tl(4.0)
+        self.radius_tl(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius in the top-left corner. Tailwind's `rounded-tl-md`.
+    /// `6px` in the top-left corner. Resolves theme `radius.md`.
     fn rounded_tl_md(self) -> Self {
-        self.radius_tl(6.0)
+        self.radius_tl(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius in the top-left corner. Tailwind's `rounded-tl-lg`.
+    /// `8px` in the top-left corner. Resolves theme `radius.lg`.
     fn rounded_tl_lg(self) -> Self {
-        self.radius_tl(8.0)
+        self.radius_tl(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius in the top-left corner. Tailwind's `rounded-tl-xl`.
+    /// `12px` in the top-left corner. Resolves theme `radius.xl`.
     fn rounded_tl_xl(self) -> Self {
-        self.radius_tl(12.0)
+        self.radius_tl(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius in the top-left corner. Tailwind's `rounded-tl-2xl`.
+    /// `16px` in the top-left corner. Resolves theme `radius.2xl`.
     fn rounded_tl_2xl(self) -> Self {
-        self.radius_tl(16.0)
+        self.radius_tl(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius in the top-left corner. Tailwind's `rounded-tl-3xl`.
+    /// `24px` in the top-left corner. Resolves theme `radius.3xl`.
     fn rounded_tl_3xl(self) -> Self {
-        self.radius_tl(24.0)
+        self.radius_tl(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius in the top-left corner. Tailwind's `rounded-tl-4xl`.
+    /// `32px` in the top-left corner. Resolves theme `radius.4xl`.
     fn rounded_tl_4xl(self) -> Self {
-        self.radius_tl(32.0)
+        self.radius_tl(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) in the top-left corner. Tailwind's `rounded-tl-full`.
+    /// Pill in the top-left corner. Resolves theme `radius.full`.
     fn rounded_tl_full(self) -> Self {
-        self.radius_tl(9999.0)
+        self.radius_tl(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- top-right corner (rounded-tr-*) ----
 
-    /// Round the top-right corner with the default radius — `4px`. Tailwind's `rounded-tr`.
+    /// Round the top-right corner with the theme's default radius.
     fn rounded_tr(self) -> Self {
-        self.radius_tr(4.0)
+        self.radius_tr(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding in the top-right corner. Tailwind's `rounded-tr-none`.
+    /// No rounding in the top-right corner. Resolves theme `radius.none`.
     fn rounded_tr_none(self) -> Self {
-        self.radius_tr(0.0)
+        self.radius_tr(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius in the top-right corner. Tailwind's `rounded-tr-xs`.
+    /// `2px` in the top-right corner. Resolves theme `radius.xs`.
     fn rounded_tr_xs(self) -> Self {
-        self.radius_tr(2.0)
+        self.radius_tr(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius in the top-right corner. Tailwind's `rounded-tr-sm`.
+    /// `4px` in the top-right corner. Resolves theme `radius.sm`.
     fn rounded_tr_sm(self) -> Self {
-        self.radius_tr(4.0)
+        self.radius_tr(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius in the top-right corner. Tailwind's `rounded-tr-md`.
+    /// `6px` in the top-right corner. Resolves theme `radius.md`.
     fn rounded_tr_md(self) -> Self {
-        self.radius_tr(6.0)
+        self.radius_tr(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius in the top-right corner. Tailwind's `rounded-tr-lg`.
+    /// `8px` in the top-right corner. Resolves theme `radius.lg`.
     fn rounded_tr_lg(self) -> Self {
-        self.radius_tr(8.0)
+        self.radius_tr(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius in the top-right corner. Tailwind's `rounded-tr-xl`.
+    /// `12px` in the top-right corner. Resolves theme `radius.xl`.
     fn rounded_tr_xl(self) -> Self {
-        self.radius_tr(12.0)
+        self.radius_tr(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius in the top-right corner. Tailwind's `rounded-tr-2xl`.
+    /// `16px` in the top-right corner. Resolves theme `radius.2xl`.
     fn rounded_tr_2xl(self) -> Self {
-        self.radius_tr(16.0)
+        self.radius_tr(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius in the top-right corner. Tailwind's `rounded-tr-3xl`.
+    /// `24px` in the top-right corner. Resolves theme `radius.3xl`.
     fn rounded_tr_3xl(self) -> Self {
-        self.radius_tr(24.0)
+        self.radius_tr(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius in the top-right corner. Tailwind's `rounded-tr-4xl`.
+    /// `32px` in the top-right corner. Resolves theme `radius.4xl`.
     fn rounded_tr_4xl(self) -> Self {
-        self.radius_tr(32.0)
+        self.radius_tr(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) in the top-right corner. Tailwind's `rounded-tr-full`.
+    /// Pill in the top-right corner. Resolves theme `radius.full`.
     fn rounded_tr_full(self) -> Self {
-        self.radius_tr(9999.0)
+        self.radius_tr(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- bottom-right corner (rounded-br-*) ----
 
-    /// Round the bottom-right corner with the default radius — `4px`. Tailwind's `rounded-br`.
+    /// Round the bottom-right corner with the theme's default radius.
     fn rounded_br(self) -> Self {
-        self.radius_br(4.0)
+        self.radius_br(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding in the bottom-right corner. Tailwind's `rounded-br-none`.
+    /// No rounding in the bottom-right corner. Resolves theme `radius.none`.
     fn rounded_br_none(self) -> Self {
-        self.radius_br(0.0)
+        self.radius_br(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius in the bottom-right corner. Tailwind's `rounded-br-xs`.
+    /// `2px` in the bottom-right corner. Resolves theme `radius.xs`.
     fn rounded_br_xs(self) -> Self {
-        self.radius_br(2.0)
+        self.radius_br(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius in the bottom-right corner. Tailwind's `rounded-br-sm`.
+    /// `4px` in the bottom-right corner. Resolves theme `radius.sm`.
     fn rounded_br_sm(self) -> Self {
-        self.radius_br(4.0)
+        self.radius_br(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius in the bottom-right corner. Tailwind's `rounded-br-md`.
+    /// `6px` in the bottom-right corner. Resolves theme `radius.md`.
     fn rounded_br_md(self) -> Self {
-        self.radius_br(6.0)
+        self.radius_br(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius in the bottom-right corner. Tailwind's `rounded-br-lg`.
+    /// `8px` in the bottom-right corner. Resolves theme `radius.lg`.
     fn rounded_br_lg(self) -> Self {
-        self.radius_br(8.0)
+        self.radius_br(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius in the bottom-right corner. Tailwind's `rounded-br-xl`.
+    /// `12px` in the bottom-right corner. Resolves theme `radius.xl`.
     fn rounded_br_xl(self) -> Self {
-        self.radius_br(12.0)
+        self.radius_br(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius in the bottom-right corner. Tailwind's `rounded-br-2xl`.
+    /// `16px` in the bottom-right corner. Resolves theme `radius.2xl`.
     fn rounded_br_2xl(self) -> Self {
-        self.radius_br(16.0)
+        self.radius_br(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius in the bottom-right corner. Tailwind's `rounded-br-3xl`.
+    /// `24px` in the bottom-right corner. Resolves theme `radius.3xl`.
     fn rounded_br_3xl(self) -> Self {
-        self.radius_br(24.0)
+        self.radius_br(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius in the bottom-right corner. Tailwind's `rounded-br-4xl`.
+    /// `32px` in the bottom-right corner. Resolves theme `radius.4xl`.
     fn rounded_br_4xl(self) -> Self {
-        self.radius_br(32.0)
+        self.radius_br(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) in the bottom-right corner. Tailwind's `rounded-br-full`.
+    /// Pill in the bottom-right corner. Resolves theme `radius.full`.
     fn rounded_br_full(self) -> Self {
-        self.radius_br(9999.0)
+        self.radius_br(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- bottom-left corner (rounded-bl-*) ----
 
-    /// Round the bottom-left corner with the default radius — `4px`. Tailwind's `rounded-bl`.
+    /// Round the bottom-left corner with the theme's default radius.
     fn rounded_bl(self) -> Self {
-        self.radius_bl(4.0)
+        self.radius_bl(active_theme().radius_or("default", 4.0))
     }
-    /// No rounding in the bottom-left corner. Tailwind's `rounded-bl-none`.
+    /// No rounding in the bottom-left corner. Resolves theme `radius.none`.
     fn rounded_bl_none(self) -> Self {
-        self.radius_bl(0.0)
+        self.radius_bl(active_theme().radius_or("none", 0.0))
     }
-    /// `2px` radius in the bottom-left corner. Tailwind's `rounded-bl-xs`.
+    /// `2px` in the bottom-left corner. Resolves theme `radius.xs`.
     fn rounded_bl_xs(self) -> Self {
-        self.radius_bl(2.0)
+        self.radius_bl(active_theme().radius_or("xs", 2.0))
     }
-    /// `4px` radius in the bottom-left corner. Tailwind's `rounded-bl-sm`.
+    /// `4px` in the bottom-left corner. Resolves theme `radius.sm`.
     fn rounded_bl_sm(self) -> Self {
-        self.radius_bl(4.0)
+        self.radius_bl(active_theme().radius_or("sm", 4.0))
     }
-    /// `6px` radius in the bottom-left corner. Tailwind's `rounded-bl-md`.
+    /// `6px` in the bottom-left corner. Resolves theme `radius.md`.
     fn rounded_bl_md(self) -> Self {
-        self.radius_bl(6.0)
+        self.radius_bl(active_theme().radius_or("md", 6.0))
     }
-    /// `8px` radius in the bottom-left corner. Tailwind's `rounded-bl-lg`.
+    /// `8px` in the bottom-left corner. Resolves theme `radius.lg`.
     fn rounded_bl_lg(self) -> Self {
-        self.radius_bl(8.0)
+        self.radius_bl(active_theme().radius_or("lg", 8.0))
     }
-    /// `12px` radius in the bottom-left corner. Tailwind's `rounded-bl-xl`.
+    /// `12px` in the bottom-left corner. Resolves theme `radius.xl`.
     fn rounded_bl_xl(self) -> Self {
-        self.radius_bl(12.0)
+        self.radius_bl(active_theme().radius_or("xl", 12.0))
     }
-    /// `16px` radius in the bottom-left corner. Tailwind's `rounded-bl-2xl`.
+    /// `16px` in the bottom-left corner. Resolves theme `radius.2xl`.
     fn rounded_bl_2xl(self) -> Self {
-        self.radius_bl(16.0)
+        self.radius_bl(active_theme().radius_or("2xl", 16.0))
     }
-    /// `24px` radius in the bottom-left corner. Tailwind's `rounded-bl-3xl`.
+    /// `24px` in the bottom-left corner. Resolves theme `radius.3xl`.
     fn rounded_bl_3xl(self) -> Self {
-        self.radius_bl(24.0)
+        self.radius_bl(active_theme().radius_or("3xl", 24.0))
     }
-    /// `32px` radius in the bottom-left corner. Tailwind's `rounded-bl-4xl`.
+    /// `32px` in the bottom-left corner. Resolves theme `radius.4xl`.
     fn rounded_bl_4xl(self) -> Self {
-        self.radius_bl(32.0)
+        self.radius_bl(active_theme().radius_or("4xl", 32.0))
     }
-    /// Fully rounded (pill) in the bottom-left corner. Tailwind's `rounded-bl-full`.
+    /// Pill in the bottom-left corner. Resolves theme `radius.full`.
     fn rounded_bl_full(self) -> Self {
-        self.radius_bl(9999.0)
-    }
-
-    /// Round all corners with the default radius — `4px`. Tailwind's `rounded`.
-    fn rounded(self) -> Self {
-        self.radius(4.0)
+        self.radius_bl(active_theme().radius_or("full", 9999.0))
     }
 
     // ---- text extras ----
@@ -3308,6 +3354,197 @@ pub trait StyledExt: Sized {
     /// `1px` left padding. Tailwind's `pl-px`.
     fn pl_px(self) -> Self {
         self.pl(1.0)
+    }
+
+    // ---- spacing: theme-driven named shortcuts ----
+    //
+    // Resolves `spacing.<key>` from the active theme, falling back to a
+    // Tailwind-ish pixel scale. Use the numeric `p_1`, `p_2`, … shortcuts
+    // for fixed-pixel values; use these for theme-driven ones.
+
+    // ---- padding: uniform ----
+
+    /// Theme `spacing.xs` (fallback 4px).
+    fn p_xs(self) -> Self {
+        self.p(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` (fallback 8px).
+    fn p_sm(self) -> Self {
+        self.p(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` (fallback 12px).
+    fn p_md(self) -> Self {
+        self.p(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` (fallback 16px).
+    fn p_lg(self) -> Self {
+        self.p(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` (fallback 20px).
+    fn p_xl(self) -> Self {
+        self.p(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` (fallback 24px).
+    fn p_2xl(self) -> Self {
+        self.p(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    // ---- padding: horizontal / vertical ----
+
+    /// Theme `spacing.xs` horizontal padding.
+    fn px_xs(self) -> Self {
+        self.px(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` horizontal padding.
+    fn px_sm(self) -> Self {
+        self.px(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` horizontal padding.
+    fn px_md(self) -> Self {
+        self.px(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` horizontal padding.
+    fn px_lg(self) -> Self {
+        self.px(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` horizontal padding.
+    fn px_xl(self) -> Self {
+        self.px(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` horizontal padding.
+    fn px_2xl(self) -> Self {
+        self.px(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    /// Theme `spacing.xs` vertical padding.
+    fn py_xs(self) -> Self {
+        self.py(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` vertical padding.
+    fn py_sm(self) -> Self {
+        self.py(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` vertical padding.
+    fn py_md(self) -> Self {
+        self.py(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` vertical padding.
+    fn py_lg(self) -> Self {
+        self.py(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` vertical padding.
+    fn py_xl(self) -> Self {
+        self.py(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` vertical padding.
+    fn py_2xl(self) -> Self {
+        self.py(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    // ---- margin: uniform ----
+
+    /// Theme `spacing.xs` margin.
+    fn m_xs(self) -> Self {
+        self.m(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` margin.
+    fn m_sm(self) -> Self {
+        self.m(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` margin.
+    fn m_md(self) -> Self {
+        self.m(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` margin.
+    fn m_lg(self) -> Self {
+        self.m(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` margin.
+    fn m_xl(self) -> Self {
+        self.m(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` margin.
+    fn m_2xl(self) -> Self {
+        self.m(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    // ---- margin: horizontal / vertical ----
+
+    /// Theme `spacing.xs` horizontal margin.
+    fn mx_xs(self) -> Self {
+        self.mx(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` horizontal margin.
+    fn mx_sm(self) -> Self {
+        self.mx(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` horizontal margin.
+    fn mx_md(self) -> Self {
+        self.mx(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` horizontal margin.
+    fn mx_lg(self) -> Self {
+        self.mx(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` horizontal margin.
+    fn mx_xl(self) -> Self {
+        self.mx(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` horizontal margin.
+    fn mx_2xl(self) -> Self {
+        self.mx(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    /// Theme `spacing.xs` vertical margin.
+    fn my_xs(self) -> Self {
+        self.my(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` vertical margin.
+    fn my_sm(self) -> Self {
+        self.my(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` vertical margin.
+    fn my_md(self) -> Self {
+        self.my(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` vertical margin.
+    fn my_lg(self) -> Self {
+        self.my(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` vertical margin.
+    fn my_xl(self) -> Self {
+        self.my(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` vertical margin.
+    fn my_2xl(self) -> Self {
+        self.my(active_theme().spacing_or("2xl", 24.0))
+    }
+
+    // ---- gap ----
+
+    /// Theme `spacing.xs` gap.
+    fn gap_xs(self) -> Self {
+        self.gap(active_theme().spacing_or("xs", 4.0))
+    }
+    /// Theme `spacing.sm` gap.
+    fn gap_sm(self) -> Self {
+        self.gap(active_theme().spacing_or("sm", 8.0))
+    }
+    /// Theme `spacing.md` gap.
+    fn gap_md(self) -> Self {
+        self.gap(active_theme().spacing_or("md", 12.0))
+    }
+    /// Theme `spacing.lg` gap.
+    fn gap_lg(self) -> Self {
+        self.gap(active_theme().spacing_or("lg", 16.0))
+    }
+    /// Theme `spacing.xl` gap.
+    fn gap_xl(self) -> Self {
+        self.gap(active_theme().spacing_or("xl", 20.0))
+    }
+    /// Theme `spacing.2xl` gap.
+    fn gap_2xl(self) -> Self {
+        self.gap(active_theme().spacing_or("2xl", 24.0))
     }
 
     // ---- margin ----
@@ -6478,36 +6715,54 @@ pub trait StyledExt: Sized {
         self
     }
 
+    // ---- z-index: theme-driven shortcuts ----
+    //
+    // Each shortcut resolves `zIndex.<key>` from the active theme,
+    // falling back to the Tailwind numeric scale.
+
+    /// Auto — behaves as `z-0`. Resolves theme `zIndex.auto` then `zIndex.0`.
     fn z_auto(self) -> Self {
-        self.layer(Layer::Relative(0))
+        let theme = active_theme();
+        let n = theme.z_index_or("auto", theme.z_index_or("0", 0));
+        self.layer(Layer::Relative(n as i16))
     }
+    /// Theme `zIndex.0` (fallback 0).
     fn z_0(self) -> Self {
-        self.layer(Layer::Relative(0))
+        self.layer(Layer::Relative(active_theme().z_index_or("0", 0) as i16))
     }
+    /// Theme `zIndex.10` (fallback 10).
     fn z_10(self) -> Self {
-        self.layer(Layer::Relative(10))
+        self.layer(Layer::Relative(active_theme().z_index_or("10", 10) as i16))
     }
+    /// Theme `zIndex.20` (fallback 20).
     fn z_20(self) -> Self {
-        self.layer(Layer::Relative(20))
+        self.layer(Layer::Relative(active_theme().z_index_or("20", 20) as i16))
     }
+    /// Theme `zIndex.30` (fallback 30).
     fn z_30(self) -> Self {
-        self.layer(Layer::Relative(30))
+        self.layer(Layer::Relative(active_theme().z_index_or("30", 30) as i16))
     }
+    /// Theme `zIndex.40` (fallback 40).
     fn z_40(self) -> Self {
-        self.layer(Layer::Relative(40))
+        self.layer(Layer::Relative(active_theme().z_index_or("40", 40) as i16))
     }
+    /// Theme `zIndex.50` (fallback 50).
     fn z_50(self) -> Self {
-        self.layer(Layer::Relative(50))
+        self.layer(Layer::Relative(active_theme().z_index_or("50", 50) as i16))
     }
+    /// Theme `zIndex.-10` (fallback −10).
     fn z_neg_10(self) -> Self {
-        self.layer(Layer::Relative(-10))
+        self.layer(Layer::Relative(active_theme().z_index_or("-10", -10) as i16))
     }
+    /// Theme `zIndex.-20` (fallback −20).
     fn z_neg_20(self) -> Self {
-        self.layer(Layer::Relative(-20))
+        self.layer(Layer::Relative(active_theme().z_index_or("-20", -20) as i16))
     }
+    /// Overlay layer — always on top. No theme lookup (Freya semantic).
     fn z_overlay(self) -> Self {
         self.layer(Layer::Overlay)
     }
+    /// Overlay with an explicit level. No theme lookup (Freya semantic).
     fn z_overlay_level(self, level: u8) -> Self {
         self.layer(Layer::OverlayLevel(level))
     }
@@ -6856,6 +7111,26 @@ pub trait ThemedExt: StyledExt + Sized {
         self
     }
 
+    /// Set the border color from a semantic token (`"border"`, `"ring"`,
+    /// `"input"`, …). Creates a 1px border if none exists yet.
+    fn border_token(mut self, theme: &Theme, key: &str) -> Self {
+        if let Some(color) = theme.color(key) {
+            let style = self.get_style();
+            let border = style.border.get_or_insert_with(|| Border::new().width(1.0));
+            border.fill = color.into();
+        }
+        self
+    }
+
+    /// Replace the font stack with `typography.fontFamily.<key>` from the
+    /// given theme. No-op if the key is absent.
+    fn font_family_token(mut self, theme: &Theme, key: &str) -> Self {
+        if let Some(stack) = theme.font_family_stack(key) {
+            self.get_style().font_families = stack;
+        }
+        self
+    }
+
     /// `text_color` ← `theme.fill(key)`
     fn text_token(mut self, theme: &Theme, key: &str) -> Self {
         if let Some(fill) = theme.fill(key) {
@@ -6890,3 +7165,19 @@ pub trait ThemedExt: StyledExt + Sized {
 }
 
 impl<T: StyledExt> ThemedExt for T {}
+
+/// Map a CSS font-weight number to Freya's `FontWeight`.
+pub fn weight_to_font_weight(w: u16) -> FontWeight {
+    match w {
+        100 => FontWeight::THIN,
+        200 => FontWeight::EXTRA_LIGHT,
+        300 => FontWeight::LIGHT,
+        400 => FontWeight::NORMAL,
+        500 => FontWeight::MEDIUM,
+        600 => FontWeight::SEMI_BOLD,
+        700 => FontWeight::BOLD,
+        800 => FontWeight::EXTRA_BOLD,
+        900 => FontWeight::BLACK,
+        _ => FontWeight::NORMAL,
+    }
+}

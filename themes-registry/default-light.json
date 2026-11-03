@@ -1,0 +1,258 @@
+{
+  "$schema": "https://github.com/brightmadueke/themes-registry/theme.schema.json",
+  "id": "default-light",
+  "name": "FreyaCN Light",
+  "appearance": "light",
+  "version": "1.0.0",
+  "author": "FreyaCN",
+  "semantic": {
+    "background": "#ffffff",
+    "foreground": "{neutral.950}",
+    "card": "#ffffff",
+    "cardForeground": "{neutral.950}",
+    "popover": "#ffffff",
+    "popoverForeground": "{neutral.950}",
+    "primary": "{neutral.900}",
+    "primaryForeground": "{neutral.50}",
+    "secondary": "{neutral.100}",
+    "secondaryForeground": "{neutral.900}",
+    "muted": "{neutral.100}",
+    "mutedForeground": "{neutral.500}",
+    "accent": "{neutral.100}",
+    "accentForeground": "{neutral.900}",
+    "destructive": "{red.600}",
+    "destructiveForeground": "#ffffff",
+    "success": "{green.600}",
+    "successForeground": "#ffffff",
+    "warning": "{amber.500}",
+    "warningForeground": "{neutral.950}",
+    "info": "{blue.500}",
+    "infoForeground": "#ffffff",
+    "border": "{neutral.200}",
+    "input": "{neutral.200}",
+    "ring": "{neutral.950}",
+    "disabled": "transparent",
+    "disabledForeground": "{neutral.400}",
+    "placeholder": "{neutral.400}",
+    "link": "{blue.600}",
+    "linkHover": "{blue.700}",
+    "sidebar": "{neutral.50}",
+    "sidebarForeground": "{neutral.950}",
+    "sidebarPrimary": "{neutral.900}",
+    "sidebarPrimaryForeground": "{neutral.50}",
+    "sidebarAccent": "{neutral.100}",
+    "sidebarAccentForeground": "{neutral.900}",
+    "sidebarBorder": "{neutral.200}",
+    "sidebarRing": "{neutral.950}",
+    "chart1": "{sky.500}",
+    "chart2": "{emerald.500}",
+    "chart3": "{violet.500}",
+    "chart4": "{amber.500}",
+    "chart5": "{rose.500}"
+  },
+  "list": {
+    "background": "{semantic.background}",
+    "border": "{semantic.border}",
+    "rowBackground": "{semantic.background}",
+    "rowHover": "{semantic.muted}",
+    "rowSelected": "{semantic.accent}",
+    "rowActive": "{semantic.accent}",
+    "rowForeground": "{semantic.foreground}",
+    "rowSelectedForeground": "{semantic.accentForeground}",
+    "rowDisabledForeground": "{semantic.disabledForeground}",
+    "rowHeight": 36,
+    "rowPaddingX": 12,
+    "rowPaddingY": 8,
+    "radius": 6,
+    "gap": 2
+  },
+  "menu": {
+    "background": "{semantic.popover}",
+    "border": "{semantic.border}",
+    "itemHover": "{semantic.muted}",
+    "itemSelected": "{semantic.accent}",
+    "itemForeground": "{semantic.popoverForeground}",
+    "separator": "{semantic.border}",
+    "radius": 6,
+    "itemPaddingX": 10,
+    "itemPaddingY": 6
+  },
+  "table": {
+    "background": "{semantic.card}",
+    "border": "{semantic.border}",
+    "headerBackground": "{semantic.muted}",
+    "headerForeground": "{semantic.mutedForeground}",
+    "rowHover": "{semantic.accent}",
+    "rowSelected": "{semantic.accent}",
+    "cellPaddingX": 12,
+    "cellPaddingY": 8,
+    "radius": 6
+  },
+  "components": {
+    "button": {
+      "primary": {
+        "background": "{semantic.primary}",
+        "foreground": "{semantic.primaryForeground}",
+        "radius": "md"
+      },
+      "secondary": {
+        "background": "{semantic.secondary}",
+        "foreground": "{semantic.secondaryForeground}",
+        "radius": "md"
+      },
+      "destructive": {
+        "background": "{semantic.destructive}",
+        "foreground": "{semantic.destructiveForeground}",
+        "radius": "md"
+      },
+      "ghost": {
+        "foreground": "{semantic.foreground}",
+        "hover": {
+          "background": "{semantic.accent}",
+          "foreground": "{semantic.accentForeground}"
+        }
+      }
+    },
+    "input": {
+      "background": "{semantic.background}",
+      "foreground": "{semantic.foreground}",
+      "placeholder": "{semantic.placeholder}",
+      "border": "{semantic.input}",
+      "focus": {
+        "border": "{semantic.ring}"
+      },
+      "radius": "md"
+    }
+  },
+  "radius": {
+    "none": 0,
+    "xs": 2,
+    "sm": 4,
+    "md": 6,
+    "lg": 8,
+    "xl": 12,
+    "2xl": 16,
+    "3xl": 24,
+    "4xl": 32,
+    "full": 9999,
+    "default": 6
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "2xl": 24,
+    "3xl": 32
+  },
+  "typography": {
+    "fontFamily": {
+      "sans": "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
+      "serif": "ui-serif, Georgia, Cambria, Times New Roman, Times, serif",
+      "mono": "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
+    },
+    "fontSize": {
+      "xs": [
+        12,
+        16
+      ],
+      "sm": [
+        14,
+        20
+      ],
+      "md": [
+        16,
+        24
+      ],
+      "base": [
+        16,
+        24
+      ],
+      "lg": [
+        18,
+        28
+      ],
+      "xl": [
+        20,
+        28
+      ],
+      "2xl": [
+        24,
+        32
+      ],
+      "3xl": [
+        30,
+        36
+      ],
+      "4xl": [
+        36,
+        40
+      ],
+      "5xl": [
+        48,
+        48
+      ],
+      "6xl": [
+        60,
+        60
+      ],
+      "7xl": [
+        72,
+        72
+      ],
+      "8xl": [
+        96,
+        96
+      ],
+      "9xl": [
+        128,
+        128
+      ]
+    },
+    "fontWeight": {
+      "thin": 100,
+      "extralight": 200,
+      "light": 300,
+      "normal": 400,
+      "base": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700,
+      "extrabold": 800,
+      "black": 900
+    }
+  },
+  "zIndex": {
+    "-20": -20,
+    "-10": -10,
+    "0": 0,
+    "10": 10,
+    "20": 20,
+    "30": 30,
+    "40": 40,
+    "50": 50,
+    "overlay": 1000
+  },
+  "motion": {
+    "duration": {
+      "fast": 150,
+      "normal": 250,
+      "slow": 400
+    },
+    "easing": {
+      "standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "decelerate": "cubic-bezier(0, 0, 0.2, 1)",
+      "accelerate": "cubic-bezier(0.4, 0, 1, 1)"
+    }
+  },
+  "shadows": {
+    "xs": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+    "sm": "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)",
+    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)",
+    "xl": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+    "2xl": "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+    "inner": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)"
+  }
+}

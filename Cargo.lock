@@ -1843,7 +1843,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "freyacn-mmaterial3"
+name = "freyacn-material3"
 version = "0.2.2"
 
 [[package]]

@@ -1,6 +1,6 @@
 use crate::styling::colors::black;
 use crate::styling::style_variants::StyleVariants;
-use crate::styling::styled::StyledExt;
+use crate::styling::styled::{StyledExt, weight_to_font_weight};
 use crate::theme::active_theme;
 use freya_core::data::Overflow;
 use freya_core::prelude::{
@@ -99,10 +99,27 @@ impl Default for Style {
             style.text_color = fill;
         }
 
-        // ---- typography: base size + sans stack ----
-        if let Some((size, _line_height)) = theme.typography.font_size.get("base") {
+        // ---- typography: base size (prefer `md`, fall back to `base`) ----
+        if let Some((size, _)) = theme
+            .typography
+            .font_size
+            .get("md")
+            .or_else(|| theme.typography.font_size.get("base"))
+        {
             style.font_size = (*size).into();
         }
+
+        // ---- typography: base weight (prefer `base`, fall back to `normal`) ----
+        if let Some(w) = theme
+            .typography
+            .font_weight
+            .get("base")
+            .or_else(|| theme.typography.font_weight.get("normal"))
+        {
+            style.font_weight = weight_to_font_weight(*w);
+        }
+
+        // ---- typography: sans stack ----
         if let Some(sans) = theme.typography.font_family.get("sans") {
             style.font_families = sans
                 .split(',')
@@ -176,15 +193,32 @@ impl Style {
     /// deterministic theme application.
     pub fn themed(theme: &crate::theme::Theme) -> Self {
         let mut style = Self::bare();
+
         if let Some(fill) = theme.fill("background") {
             style.background = fill;
         }
         if let Some(fill) = theme.fill("foreground") {
             style.text_color = fill;
         }
-        if let Some((size, _)) = theme.typography.font_size.get("base") {
+
+        if let Some((size, _)) = theme
+            .typography
+            .font_size
+            .get("md")
+            .or_else(|| theme.typography.font_size.get("base"))
+        {
             style.font_size = (*size).into();
         }
+
+        if let Some(w) = theme
+            .typography
+            .font_weight
+            .get("base")
+            .or_else(|| theme.typography.font_weight.get("normal"))
+        {
+            style.font_weight = weight_to_font_weight(*w);
+        }
+
         if let Some(sans) = theme.typography.font_family.get("sans") {
             style.font_families = sans
                 .split(',')
@@ -193,6 +227,7 @@ impl Style {
                 .map(|f| Cow::Owned(f.to_owned()))
                 .collect();
         }
+
         style
     }
 

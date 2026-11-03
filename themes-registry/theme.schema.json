@@ -1,0 +1,754 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://freya-cn.dev/schemas/theme.schema.json",
+  "title": "FreyaCN Theme",
+  "description": "Schema for FreyaCN JSON theme files. Mirrors `ThemeConfig` in `theme.rs`. Note: the runtime is slightly more lenient than this schema (e.g. it accepts `Transparent` and hex without `#`); the schema is the strict contract and rejects typos in property names.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "appearance",
+    "semantic"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema URL for editor autocompletion."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier. Used as the key in `ThemeRegistry` and by `set_active(id)`."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name shown in theme pickers."
+    },
+    "appearance": {
+      "enum": [
+        "light",
+        "dark"
+      ],
+      "description": "Light/dark marker. Currently informational only — colours come from `semantic`."
+    },
+    "version": {
+      "type": "string",
+      "default": "",
+      "description": "Semantic version string. Optional."
+    },
+    "author": {
+      "type": "string",
+      "description": "Author name. Optional."
+    },
+    "palette": {
+      "type": "object",
+      "description": "Palette overrides layered on top of the built-in Tailwind scale. Keys are `\"group.step\"` (e.g. `\"brand.500\"`), values are hex strings. Referenced from tokens as `{brand.500}`.",
+      "additionalProperties": {
+        "$ref": "#/$defs/hexColor"
+      },
+      "examples": [
+        {
+          "brand.500": "#6366f1",
+          "brand.600": "#4f46e5"
+        }
+      ]
+    },
+    "semantic": {
+      "type": "object",
+      "description": "Core semantic tokens. Can reference each other via `{semantic.other}` — resolution is iterative with cycle detection.",
+      "additionalProperties": {
+        "$ref": "#/$defs/tokenValue"
+      },
+      "examples": [
+        {
+          "background": "{neutral.950}",
+          "foreground": "{neutral.50}",
+          "primary": "{brand.500}",
+          "primaryForeground": "{neutral.50}",
+          "border": "{neutral.800}",
+          "ring": "{brand.500}"
+        }
+      ]
+    },
+    "colors": {
+      "type": "object",
+      "description": "Flat dotted tokens, gpui-kit style: `\"button.primary.background\"`, `\"list.row.hover\"`, etc. Also transparently overlaid onto the structured `list`/`menu`/`table` themes when the key matches.",
+      "additionalProperties": {
+        "$ref": "#/$defs/tokenValue"
+      },
+      "examples": [
+        {
+          "button.primary.background": "{primary}",
+          "button.primary.hover.background": "{brand.500}/90",
+          "list.row.hover": "{muted}"
+        }
+      ]
+    },
+    "list": {
+      "$ref": "#/$defs/listConfig"
+    },
+    "menu": {
+      "$ref": "#/$defs/menuConfig"
+    },
+    "table": {
+      "$ref": "#/$defs/tableConfig"
+    },
+    "components": {
+      "description": "Free-form nested component tokens. Any JSON shape; not validated at load time — only when looked up via `component_fill` / `component_color` / `component_radius`.",
+      "examples": [
+        {
+          "button": {
+            "primary": {
+              "background": "{primary}",
+              "hover": {
+                "background": "{brand.600}"
+              },
+              "radius": "lg"
+            }
+          }
+        }
+      ]
+    },
+    "radius": {
+      "type": "object",
+      "description": "Named radius values in `px`. Drives the `rounded_*` shortcuts. Recommended keys: `none`, `xs`, `sm`, `md`, `lg`, `xl`, `2xl`, `3xl`, `4xl`, `full`, `default`.",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0
+      },
+      "examples": [
+        {
+          "sm": 4,
+          "md": 6,
+          "lg": 8,
+          "xl": 12,
+          "full": 9999
+        }
+      ]
+    },
+    "spacing": {
+      "type": "object",
+      "description": "Named spacing values in `px`. Drives the `p_sm` / `gap_md` / `m_lg` / … shortcuts.",
+      "additionalProperties": {
+        "type": "number"
+      },
+      "examples": [
+        {
+          "xs": 4,
+          "sm": 8,
+          "md": 12,
+          "lg": 16,
+          "xl": 20
+        }
+      ]
+    },
+    "typography": {
+      "$ref": "#/$defs/typographyConfig"
+    },
+    "shadows": {
+      "type": "object",
+      "description": "Declarative only — Freya's `Style` has no box-shadow field. Exposed via `Theme::shadow`, consumed by nothing else. Values are CSS shadow strings (not parsed).",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "examples": [
+        {
+          "sm": "0 1px 2px rgba(0,0,0,.05)",
+          "md": "0 4px 6px rgba(0,0,0,.1)"
+        }
+      ]
+    },
+    "motion": {
+      "$ref": "#/$defs/motionConfig"
+    },
+    "zIndex": {
+      "type": "object",
+      "description": "Named z-index values. Drives the `z_*` shortcuts. Falls back to the Tailwind numeric scale when a key is missing.",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "examples": [
+        {
+          "0": 0,
+          "10": 10,
+          "20": 20,
+          "30": 30,
+          "40": 40,
+          "50": 50,
+          "overlay": 1000
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "id": "my-app-dark",
+      "name": "My App Dark",
+      "appearance": "dark",
+      "version": "1.0.0",
+      "author": "you",
+      "palette": {
+        "brand.500": "#6366f1",
+        "brand.600": "#4f46e5"
+      },
+      "semantic": {
+        "background": "{neutral.950}",
+        "foreground": "{neutral.50}",
+        "card": "{neutral.900}",
+        "cardForeground": "{neutral.50}",
+        "popover": "{neutral.900}",
+        "popoverForeground": "{neutral.50}",
+        "primary": "{brand.500}",
+        "primaryForeground": "{neutral.50}",
+        "secondary": "{neutral.800}",
+        "secondaryForeground": "{neutral.50}",
+        "muted": "{neutral.800}",
+        "mutedForeground": "{neutral.400}",
+        "accent": "{neutral.800}",
+        "accentForeground": "{neutral.50}",
+        "destructive": "{red.600}",
+        "destructiveForeground": "{white}",
+        "border": "{neutral.800}",
+        "input": "{neutral.800}",
+        "ring": "{brand.500}"
+      },
+      "colors": {
+        "button.primary.background": "{primary}",
+        "button.primary.hover.background": "{brand.500}/90",
+        "list.row.hover": "{muted}"
+      },
+      "list": {
+        "rowHeight": 36,
+        "rowPaddingX": 12,
+        "radius": 6
+      },
+      "menu": {
+        "itemPaddingX": 10,
+        "itemPaddingY": 6
+      },
+      "table": {
+        "cellPaddingX": 12,
+        "cellPaddingY": 8,
+        "radius": 6
+      },
+      "radius": {
+        "sm": 4,
+        "md": 6,
+        "lg": 8,
+        "xl": 12
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 12,
+        "lg": 16
+      },
+      "typography": {
+        "fontFamily": {
+          "sans": "Inter, ui-sans-serif, system-ui",
+          "mono": "JetBrains Mono, ui-monospace"
+        },
+        "fontSize": {
+          "sm": [
+            14,
+            20
+          ],
+          "md": [
+            16,
+            24
+          ],
+          "lg": [
+            18,
+            28
+          ]
+        },
+        "fontWeight": {
+          "base": 400,
+          "medium": 500,
+          "bold": 700
+        }
+      },
+      "zIndex": {
+        "0": 0,
+        "10": 10,
+        "50": 50,
+        "overlay": 1000
+      },
+      "motion": {
+        "duration": {
+          "fast": 150,
+          "normal": 250
+        },
+        "easing": {
+          "standard": "cubic-bezier(.4,0,.2,1)"
+        }
+      },
+      "shadows": {
+        "sm": "0 1px 2px rgba(0,0,0,.05)",
+        "md": "0 4px 6px rgba(0,0,0,.1)"
+      }
+    }
+  ],
+  "$defs": {
+    "hexColor": {
+      "title": "Hex colour",
+      "description": "Bare or `#`-prefixed hex string. Accepts 3, 4, 6, or 8 hex digits. Used only for `palette` override values.",
+      "type": "string",
+      "pattern": "^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$",
+      "examples": [
+        "#fff",
+        "#ffffff",
+        "#ffff",
+        "#ffffff80",
+        "3b82f6"
+      ]
+    },
+    "colorToken": {
+      "title": "Colour token",
+      "description": "Solid-colour token string. Accepts: `transparent`; bare or `#`-prefixed hex (3/4/6/8 digits); braced references `{family.step}`, `{brand.500}`, `{semantic.primary}`, optionally followed by `/NN` to override alpha (0–100).",
+      "type": "string",
+      "pattern": "^(?:[Tt][Rr][Aa][Nn][Ss][Pp][Aa][Rr][Ee][Nn][Tt]|#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|\\{[^{}\\s]+\\}(?:/\\d+(?:\\.\\d+)?)?)$",
+      "examples": [
+        "{blue.500}",
+        "{semantic.primary}",
+        "{neutral.950}/24",
+        "{brand.500}/90",
+        "#ff8800",
+        "transparent"
+      ]
+    },
+    "stop": {
+      "title": "Gradient colour stop",
+      "type": "object",
+      "required": [
+        "color",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Stop colour — same grammar as `colorToken`.",
+          "$ref": "#/$defs/colorToken"
+        },
+        "at": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Position along the gradient, 0–100."
+        }
+      }
+    },
+    "linearSpec": {
+      "title": "Linear gradient",
+      "type": "object",
+      "required": [
+        "stops"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "type": "number",
+          "default": 0,
+          "description": "Angle in degrees clockwise from up."
+        },
+        "stops": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stop"
+          }
+        }
+      },
+      "examples": [
+        {
+          "angle": 135,
+          "stops": [
+            {
+              "color": "{blue.500}",
+              "at": 0
+            },
+            {
+              "color": "{purple.500}",
+              "at": 100
+            }
+          ]
+        }
+      ]
+    },
+    "radialSpec": {
+      "title": "Radial gradient",
+      "type": "object",
+      "required": [
+        "stops"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "default": [
+            0.5,
+            0.5
+          ],
+          "description": "Relative centre (x, y) in 0.0–1.0. Currently ignored by Freya's renderer; kept for forward compatibility."
+        },
+        "radius": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Relative radius in 0.0–1.0. Currently ignored; kept for forward compatibility."
+        },
+        "stops": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stop"
+          }
+        }
+      }
+    },
+    "conicSpec": {
+      "title": "Conic gradient",
+      "type": "object",
+      "required": [
+        "stops"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "type": "number",
+          "default": 0,
+          "description": "Angle in degrees."
+        },
+        "center": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "default": [
+            0.5,
+            0.5
+          ],
+          "description": "Relative centre. Currently ignored; kept for forward compatibility."
+        },
+        "stops": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stop"
+          }
+        }
+      }
+    },
+    "tokenValue": {
+      "title": "Token value",
+      "description": "Any of: a solid colour string, a linear gradient, a radial gradient, or a conic gradient.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/colorToken"
+        },
+        {
+          "type": "object",
+          "required": [
+            "linear"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "linear": {
+              "$ref": "#/$defs/linearSpec"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "radial"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "radial": {
+              "$ref": "#/$defs/radialSpec"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "conic"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "conic": {
+              "$ref": "#/$defs/conicSpec"
+            }
+          }
+        }
+      ]
+    },
+    "listConfig": {
+      "title": "List theme",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "border": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowBackground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowHover": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowSelected": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowActive": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowForeground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowSelectedForeground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowDisabledForeground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowHeight": {
+          "type": "number",
+          "minimum": 0,
+          "default": 32,
+          "description": "Row height in px."
+        },
+        "rowPaddingX": {
+          "type": "number",
+          "minimum": 0,
+          "default": 12,
+          "description": "Row horizontal padding in px."
+        },
+        "rowPaddingY": {
+          "type": "number",
+          "minimum": 0,
+          "default": 6,
+          "description": "Row vertical padding in px."
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "default": 6,
+          "description": "Row corner radius in px."
+        },
+        "gap": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Gap between rows in px."
+        }
+      }
+    },
+    "menuConfig": {
+      "title": "Menu theme",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "border": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "itemHover": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "itemSelected": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "itemForeground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "separator": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "default": 6,
+          "description": "Menu corner radius in px."
+        },
+        "itemPaddingX": {
+          "type": "number",
+          "minimum": 0,
+          "default": 10,
+          "description": "Item horizontal padding in px."
+        },
+        "itemPaddingY": {
+          "type": "number",
+          "minimum": 0,
+          "default": 6,
+          "description": "Item vertical padding in px."
+        }
+      }
+    },
+    "tableConfig": {
+      "title": "Table theme",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "border": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "headerBackground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "headerForeground": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowHover": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "rowSelected": {
+          "$ref": "#/$defs/tokenValue"
+        },
+        "cellPaddingX": {
+          "type": "number",
+          "minimum": 0,
+          "default": 12,
+          "description": "Cell horizontal padding in px."
+        },
+        "cellPaddingY": {
+          "type": "number",
+          "minimum": 0,
+          "default": 8,
+          "description": "Cell vertical padding in px."
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "default": 6,
+          "description": "Table corner radius in px."
+        }
+      }
+    },
+    "typographyConfig": {
+      "title": "Typography tokens",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fontFamily": {
+          "type": "object",
+          "description": "Named font stacks. Values are comma-separated CSS font-family strings.",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          },
+          "examples": [
+            {
+              "sans": "Inter, ui-sans-serif, system-ui",
+              "serif": "Georgia, Cambria, Times New Roman, serif",
+              "mono": "JetBrains Mono, ui-monospace"
+            }
+          ]
+        },
+        "fontSize": {
+          "type": "object",
+          "description": "Named size entries. Each value is `[size_px, line_height_px]`.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "examples": [
+            {
+              "xs": [
+                12,
+                16
+              ],
+              "sm": [
+                14,
+                20
+              ],
+              "md": [
+                16,
+                24
+              ],
+              "lg": [
+                18,
+                28
+              ]
+            }
+          ]
+        },
+        "fontWeight": {
+          "type": "object",
+          "description": "Named weights. Values are CSS weight numbers.",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "examples": [
+            {
+              "base": 400,
+              "medium": 500,
+              "semibold": 600,
+              "bold": 700
+            }
+          ]
+        }
+      }
+    },
+    "motionConfig": {
+      "title": "Motion tokens (declarative only)",
+      "description": "Freya's Style has no transition fields; these values are exposed via `Theme::motion_duration` / `Theme::motion_easing` but do not animate anything yet.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "type": "object",
+          "description": "Named durations in milliseconds.",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "examples": [
+            {
+              "fast": 150,
+              "normal": 250,
+              "slow": 400
+            }
+          ]
+        },
+        "easing": {
+          "type": "object",
+          "description": "Named easing curves in CSS syntax (not parsed).",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "examples": [
+            {
+              "standard": "cubic-bezier(.4,0,.2,1)",
+              "ease-out": "cubic-bezier(0,0,.2,1)"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

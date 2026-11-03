@@ -269,7 +269,7 @@ Every color value can be written in one of these forms:
 | Semantic reference (inside `components` only) | `"{semantic.primary}"` |
 
 Palette references resolve against the full Tailwind scale built into
-`colors.rs` — `stone`, `mauve`, `olive`, `mist`, `taupe`, `slate`, `gray`,
+`color` — `stone`, `mauve`, `olive`, `mist`, `taupe`, `slate`, `gray`,
 `zinc`, `neutral`, `red`, `orange`, `amber`, `yellow`, `lime`, `green`,
 `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`,
 `fuchsia`, `pink`, `rose` — plus `white`, `black`, and `transparent`.
@@ -550,7 +550,7 @@ express a palette override that used to be `theme_color("blue")`, put a
 override section at the top of the JSON.
 
 The old `Colors` struct is gone — palette lookups now go through the functions
-in `colors.rs` (`blue_500()`, `neutral_950()`, …) and resolve to `StyledColor`.
+in `color` (`blue_500()`, `neutral_950()`, …) and resolve to `StyledColor`.
 
 ---
 

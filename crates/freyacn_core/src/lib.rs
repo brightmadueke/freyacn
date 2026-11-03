@@ -531,8 +531,6 @@
 //! [`use_init_theme_registry`]: crate::theme::load_theme_registry
 //! [`StyleVariant::priority`]: crate::styling::StyleVariant::priority
 
-extern crate self as freyacn;
-
 pub mod cn;
 pub mod elements;
 pub mod styling;
