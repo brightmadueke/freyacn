@@ -12,62 +12,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma"]
-
-freya_winit = ["freyacn-core/freya_winit"]
-freya_gpu = ["freyacn-core/freya_gpu"]
-freya_accessibility = ["freyacn-core/freya_accessibility"]
-freya_platform_text_gamma = ["freyacn-core/freya_platform_text_gamma"]
-
-freya_router = ["freyacn-core/freya_router"]
-freya_i18n = ["freyacn-core/freya_i18n"]
-freya_remote_asset = ["freyacn-core/freya_remote_asset"]
-freya_tray = ["freyacn-core/freya_tray"]
-freya_sdk = ["freyacn-core/freya_sdk"]
-freya_sdk_tokio = ["freyacn-core/freya_sdk_tokio"]
-freya_gif = ["freyacn-core/freya_gif"]
-freya_video = ["freyacn-core/freya_video"]
-freya_plot = ["freyacn-core/freya_plot"]
-freya_material_design = ["freyacn-core/freya_material_design"]
-freya_calendar = ["freyacn-core/freya_calendar"]
-freya_icons = ["freyacn-core/freya_icons"]
-freya_icons_lucide = ["freyacn-core/freya_icons_lucide"]
-freya_radio = ["freyacn-core/freya_radio"]
-freya_query = ["freyacn-core/freya_query"]
-freya_markdown = ["freyacn-core/freya_markdown"]
-freya_html = ["freyacn-core/freya_html"]
-freya_titlebar = ["freyacn-core/freya_titlebar"]
-freya_borderless = ["freyacn-core/freya_borderless"]
-freya_terminal = ["freyacn-core/freya_terminal"]
-freya_terminal_pty = ["freyacn-core/freya_terminal_pty"]
-freya_code_editor = ["freyacn-core/freya_code_editor"]
-freya_camera = ["freyacn-core/freya_camera"]
-freya_web = ["freyacn-core/freya_web"]
-
-freya_devtools = ["freyacn-core/freya_devtools"]
-freya_metrics = ["freyacn-core/freya_metrics"]
-freya_hotpath = ["freyacn-core/freya_hotpath"]
-freya_hotreload = ["freyacn-core/freya_hotreload"]
-freya_zoom_shortcuts = ["freyacn-core/freya_zoom_shortcuts"]
 shadcn = ["dep:freyacn-shadcn"]
 material3 = ["dep:freyacn-material3"]
-freya_all = ["freyacn-core/freya_all"]
-
-all = [
-    "freya_all",
-    "shadcn",
-    "material3",
-]
-
-full = [
-    "freya_winit", "freya_gpu", "freya_accessibility", "freya_platform_text_gamma",
-    "freya_router", "freya_i18n", "freya_remote_asset", "freya_tray", "freya_sdk", "freya_sdk_tokio",
-    "freya_gif", "freya_video", "freya_plot", "freya_material_design", "freya_calendar",
-    "freya_icons", "freya_icons_lucide", "freya_radio", "freya_query", "freya_markdown", "freya_html",
-    "freya_titlebar", "freya_borderless", "freya_terminal", "freya_terminal_pty",
-    "freya_code_editor", "freya_camera", "freya_web", "freya_zoom_shortcuts",
-    "shadcn", "material3",
-]
+all = ["shadcn", "material3"]
+full = ["shadcn", "material3", ]
 
 [dependencies]
 freyacn-core = { workspace = true }

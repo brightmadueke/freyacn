@@ -1,136 +1,471 @@
-**Targets Freya `0.5.0-rc.13`.**
+A JSON-driven design system for [Freya](https://github.com/marc2332/freya) desktop UIs. FreyaCN bundles three layers
+that share one `Style` type and one inheritance chain: runtime-loaded JSON themes, a Tailwind-inspired utility
+vocabulary, and HTML-like elements.
 
----
+**Targets Freya `0.5.0-rc.13`.** Pre-release — the public API may break between `0.x` releases. Pin to a specific tag or
+commit if you need stability.
 
-**FreyaCN** is a design-system layer for [Freya](https://github.com/marc2332/freya).
-It gives Freya three things that work as one:
+## Features
 
-- **Theming** — JSON files define every colour, spacing, radius, and
-  typography value. Swap the file, change the whole UI. No rebuild.
-- **Styling** — a Tailwind-inspired utility vocabulary, available both as
-  fluent builder methods (`Style::default().bg(blue_500()).p_4()`) and as
-  parsed class strings (`.style("bg-primary p-4 hover:bg-primary/90")`).
-  Supports theme tokens, `dark:`, the full `aria-*:` family, arbitrary
-  bracketed values, and `ring-*`.
-- **Elements** — HTML-like primitives (`div`, `input`, `button`, `checkbox`,
-  `radio`, `text`, `p`, `image`, `icon`) pre-wired to the same style
-  cascade, so a rule written once works everywhere.
+- **Themes as JSON.** Every colour, spacing, radius, typography value, gradient, shadow, motion curve, and z-index lives
+  in a JSON file loaded at runtime. Swap the file, change the whole UI.
+- **Tailwind-style utilities.** Compose `Style` with fluent methods (`.bg(blue_500()).p_4()`) or with parsed class
+  strings (`.style("bg-primary hover:bg-primary/90")`). Both produce the same value.
+- **HTML-like elements.** `div`, `text`, `p`, `button`, `input`, `image`, `icon`, and friends, pre-wired to the style
+  cascade.
+- **Per-component tokens with state.** Themes can define `button.primary.hover.background`-style entries resolved
+  through dotted paths, with a built-in state fallback chain.
+- **Structural `has:` variants.** `has-[svg]:`, `has-[img]:`, `has-[:checked]:`, `has-[:selected]:`, `has-[:disabled]:`
+  fire when a descendant matches — via automatic signals from `Icon` / `Image` / `Checkbox` / `Radio` / `Input`, or
+  explicitly via `.with_has_svg(cond)` and friends.
+- **Optional component presets.** `shadcn` and `material3` feature flags pull in pre-built component sets that plug into
+  the same `Style` / theme / inheritance model.
+- **Macros.** `#[component]`, `#[variant]`, `#[extensions]`, `#[struct_fields]`, and `cn!` for the common
+  component-authoring patterns.
 
-The layers share one `Style` struct, one variant-precedence model, and one
-inheritance chain — which is what makes a design system feel coherent
-instead of a stack of disconnected utilities. Start with the bundled
-`default-dark` theme, swap in a Material-inspired one, or ship your own JSON
-file; the API stays the same.
+## Installation
 
-> ⚠️ **Pre-release.** The public API is not yet stable. Breaking changes may
-> land in any `0.x` release. Pin to a specific commit or tag for anything you
-> intend to keep working.
+### From crates.io (latest published version)
 
-# Core Ideas
+```toml
+[dependencies]
+freyacn = "0.2.2"
+```
 
-**FreyaCN** is built on two ideas. The theming, the utility strings, the
-multi-design-system support — all of it falls out of these two.
+The current release is **0.2.2**. The next release (**0.2.3**) will target Freya `0.5.0-rc.13`.
 
-1. **Theme-first** — Themes are data, loaded from JSON, not compiled in.
-2. **Tailwind-inspired** — You style with utility strings and state modifiers
-   you already know.
+### From a release tag (recommended for reproducibility)
 
----
+Every published release is tagged on the repository (`v0.2.2`, `v0.2.3`, …). Pin to a tag to lock in an exact version,
+including any commit that hasn't propagated to crates.io yet:
 
-## Theme-first
+```toml
+[dependencies]
+freyacn = { git = "https://github.com/brightmadueke/freyacn", tag = "v0.2.2" }
+```
 
-A theme is a JSON file. If it isn't in the JSON, it isn't in the design.
+Swap `v0.2.2` for whatever tag you want to target — e.g. `v0.2.3` once the next release is cut.
 
-**FreyaCN** resolves every visual decision — colour, spacing, radius,
-typography, gradients, shadows, motion, z-index — through a theme loaded at
-runtime. Styles never name a hex code; they name a semantic token. Ship the
-same binary with `default-dark.json` or `my-brand.json` and the UI changes.
+### From a specific commit
+
+```toml
+[dependencies]
+freyacn = { git = "https://github.com/brightmadueke/freyacn", rev = "<sha>" }
+```
+
+Use this when you need an exact point-in-history that hasn't been tagged, or to bisect a regression.
+
+### Cargo features
+
+Core FreyaCN — themes, styling, elements, macros — is always present. Optional **component presets** are enabled
+per-feature:
+
+| Feature     | Enables                                                              | Default |
+|-------------|----------------------------------------------------------------------|---------|
+| `shadcn`    | shadcn/ui component set — reachable at `freyacn::shadcn`             | off     |
+| `material3` | Material Design 3 component set — at `freyacn::material3`            | off     |
+| `all`       | Both presets (`shadcn` + `material3`)                                | off     |
+| `full`      | Both presets (`shadcn` + `material3`) — currently identical to `all` | off     |
+
+```toml
+freyacn = { version = "0.2.2", features = ["all"] }
+# or, pinned to a tag:
+freyacn = { git = "https://github.com/brightmadueke/freyacn", tag = "v0.2.2", features = ["all"] }
+```
+
+Individual flags compose — `features = ["shadcn"]` pulls in only shadcn, `features = ["material3"]` only Material 3.
+See [Presets](#presets) for what each one provides.
+
+## Quick start
 
 ```rust
 use freyacn::prelude::*;
 
-// Load a JSON theme and provide it to the current subtree.
-let themes = use_init_theme_registry(include_str!("../themes/default-dark.json"));
+#[component]
+fn App() {
+    // Load `themes/default-dark.json`, install it as the active theme,
+    // and provide a `ThemeHandle` to the subtree.
+    let _themes = load_theme("themes/default-dark.json");
 
-// Read a token anywhere below it.
-let t = use_theme();                       // Arc<Theme>
-div()
-.bg(t.background_fill())               // Fill (solid or gradient)
-.text_color(t.foreground())            // Color
-.radius(t.radius("lg"))                // f32
-.p(t.spacing("4"));                    // f32
+    div()
+        .bg_background()
+        .text_foreground()
+        .p_6()
+        .child(text("Hello, FreyaCN!"))
+}
 ```
 
-Themes are loadable from disk (`load_theme_registry_from_dir`), swappable
-at runtime (`themes.set_active("default-light")?`), reloadable without a
-rebuild (`themes.reload_dir(path)`), and validated on load (missing required
-tokens and low-contrast pairs produce warnings on stderr — they never fail
-the load). Validation is compiled out in release builds.
+The four loaders — `load_theme`, `load_theme_from_json`, `load_themes`, `load_themes_with_default` — all parse the JSON,
+install the chosen theme as the thread-local active theme, and provide both a reactive `State<Arc<Theme>>` and a
+`ThemeHandle` into Freya's context. Descendants read them with `use_theme()` / `use_cn_theme()` / `use_theme_handle()`.
 
-## Tailwind-inspired
+**Return types.** Plain functions returning elements use `-> impl IntoElement` and end with the element expression — no
+`.into()`. Functions annotated with `#[component]` skip the return type entirely; the macro generates `impl IntoElement`
+for you. All examples below follow this convention.
 
-The syntax you know. No build pipeline you don't.
+## Usage
 
-**FreyaCN** adopts Tailwind's mental model — composable utility strings —
-without adopting Tailwind's toolchain. Utilities are implemented either as
-builder methods (`StyledExt`) or as parsed class strings (`StyledString`).
+### Loading a theme
 
-A styled string looks like this:
+Four entry points, depending on where the JSON lives and how many themes you ship.
 
+**One file on disk** — pass a path (or anything that converts to one: `&str`, `String`, `&Path`, `PathBuf`):
+
+```rust
+let themes = load_theme("themes/default-dark.json");
 ```
-bg-primary text-primary-foreground p-4 rounded-md hover:bg-primary/90
+
+**Embedded at compile time** — use `include_str!` with `load_theme_from_json`:
+
+```rust
+let themes = load_theme_from_json(include_str!("../themes/default-dark.json"));
 ```
 
-Note the *semantic tokens* (`primary`, `primary-foreground`): colour
-utilities resolve through the active theme, so the same class string
-renders correctly against any theme that defines those tokens. Palette
-colours (`blue-500`, `neutral-950`, …) still work as before for one-off
-choices.
+**A directory of `.json` files** — auto-activates the first one in filesystem order:
 
-### Usage example
+```rust
+let themes = load_themes("themes");
+```
 
-#### Builder methods
+**A directory, with a specific theme active** — loads every file, then activates the one whose `id` matches:
+
+```rust
+let themes = load_themes_with_default("themes", "default-dark");
+```
+
+All four must be called inside a Freya component (they use `use_hook`). For non-Freya contexts — tests, CLI tooling,
+previews — use `Theme::try_from_json_str` or `ThemeRegistry` directly:
+
+```rust
+use freyacn::theme::Theme;
+
+let theme = Theme::try_from_json_str(include_str!("themes/dark.json")) ?;
+let bg = theme.background_fill();
+```
+
+```rust
+use freyacn::theme::ThemeRegistry;
+
+let registry = ThemeRegistry::new();
+registry.load(include_str!("themes/dark.json"));
+registry.set_active("dark") ?;
+```
+
+### Reading tokens
 
 ```rust
 use freyacn::prelude::*;
 
+#[component]
+fn Card() {
+    let t = use_theme();  // Arc<Theme>
+
+    div()
+        .bg(t.card_fill())                // Fill (solid or gradient)
+        .text_color(t.card_foreground())  // Color
+        .radius(t.radius("lg"))           // f32
+        .p(t.spacing("4"))                // f32
+}
+```
+
+Named getters are generated for the standard semantic set — `background`, `foreground`, `card`, `primary`, `muted`,
+`destructive`, `border`, `ring`, `link`, and so on. Each has a matching `_fill` variant that preserves gradients.
+
+For tokens not covered by a named getter, use `t.color("key")` / `t.fill("key")`.
+
+### Styling: builder methods
+
+```rust
 let style = Style::default ()
 .bg(blue_500())
 .text_color(cyan_50())
-.p_4();
+.p_4()
+.rounded_md();
 ```
 
-#### Parsed class string
+`Style::default()` seeds `background` and `text_color` from the active theme, so new elements inherit the theme baseline
+without any explicit call. Explicit `.bg(..)` / `.text_color(..)` override that default.
+
+`Style::bare()` gives a theme-independent `Style` (used internally as the patch layer, and useful for tests).
+`Style::themed(&theme)` builds one from an explicit theme.
+
+### Styling: class strings
 
 ```rust
-use freyacn::prelude::*;
-
-let style = Style::default ()
-.style("bg-blue-500 text-cyan-50 p-4");
+let style = Style::default ().style(
+"bg-primary text-primary-foreground p-4 rounded-md hover:bg-primary/90",
+);
 ```
 
-Both forms produce the same `Style`. Pick whichever reads better at the call
-site; the two are fully interchangeable.
+Colour utilities resolve their name in three steps:
 
-No CSS file. No purge step. No class-name mangling. The utility string is the
-API. Anyone who has written Tailwind is productive on day one, and nobody has
-to learn a bespoke styling DSL.
+1. The built-in Tailwind palette (`blue-500`, `neutral-950`, `white`, …).
+2. The active theme's `semantic` map (`primary`, `primary-foreground`, `background`, …).
+3. The active theme's border-only map (`ring`, `border`, `input`).
 
----
+Class names are kebab-case; theme keys are camelCase. Both spellings resolve, so `text-primary-foreground` finds
+`primaryForeground` in the theme JSON.
 
-# Theming
+### State variants
 
-## What a theme is
+Prefix a class with a state, or chain a builder method:
 
-Every theme is a single JSON document with a stable, documented shape:
+```rust
+// Class string
+Style::default ().style(
+"bg-primary hover:bg-primary/90 \
+     focus-visible:ring-[3px] focus-visible:ring-ring/50 \
+     aria-invalid:border-destructive",
+)
+
+// Fluent
+Style::default ()
+.bg(blue_500())
+.hover( | s| s.bg(blue_700()))
+.focus( | s| s.bg(blue_600()))
+```
+
+Available prefixes: `dark:`, `hover:`, `focus:`, `focus-visible:`, `focus-within:`, `active:`, `disabled:`, `checked:`,
+`selected:`, `aria-invalid:`, `aria-checked:`, `aria-disabled:`, `aria-expanded:`, `aria-pressed:`, `aria-readonly:`,
+`aria-required:`, `aria-selected:`, `aria-hidden:`, plus the structural `has-*` family — `has-[svg]:`, `has-[img]:`,
+`has-[:checked]:`, `has-[:selected]:`, `has-[:disabled]:`.
+
+Prefixes compose left to right: `dark:aria-invalid:bg-red-500` fires only when both are active. Precedence between
+overlapping variants is fixed — see the `styling` module docs for the full ordering.
+
+`aria-*:` variants only fire when the corresponding state is set. Interactive elements implement `HasSemanticEvents`,
+which exposes `.with_aria_invalid(..)`, `.with_aria_checked(..)`, `.with_aria_disabled(..)`, `.with_aria_expanded(..)`,
+`.with_aria_pressed(..)`, `.with_aria_readonly(..)`, `.with_aria_required(..)`, `.with_aria_selected(..)`,
+`.with_aria_hidden(..)`:
+
+```rust
+input(value)
+.with_aria_invalid( ! form_is_valid)
+.style("aria-invalid:border-destructive")
+```
+
+`with_disabled` / `with_checked` / `with_selected` set both the native flag and the aria state in one call.
+
+### `has:` variants
+
+`has-*:` classes fire when a descendant matches a signal:
+
+- `has-[svg]:` — contains an `Icon`
+- `has-[img]:` — contains an `Image`
+- `has-[:checked]:` — contains a checked `Checkbox` / `Radio`
+- `has-[:selected]:` — contains a selected descendant
+- `has-[:disabled]:` — contains a disabled descendant
+
+Two ways to drive them:
+
+**Automatic signaling** — a matching child (`Icon` emits `Svg`, `Image` emits `Img`, `Checkbox` / `Radio` emit `Checked`
+when checked) signals the nearest `has:`-aware ancestor:
+
+```rust
+button()
+.style("has-[svg]:pl-3")
+.child(icon(lucide::check()))
+.child(text("Continue"))
+```
+
+**Explicit `.with_has_*()`** — synchronous, no one-frame delay, resets when `false`:
+
+```rust
+button()
+.with_has_svg(show_icon)
+.has_svg( | s| s.pl_3())
+.maybe_child(show_icon.then( | | icon(lucide::check())))
+```
+
+Automatic signaling carries three caveats: one-frame delay on mount, no unmount cleanup (use explicit `.with_has_*()`for
+conditional children), and immediate-children-only unless intermediates also declare `has:` classes. See the
+`styling::has` module docs for the full mechanism.
+
+### Component tokens
+
+Themes can carry free-form `components` JSON, read through state-aware dotted-path accessors:
+
+```json
+"components": {
+  "button": {
+    "primary": {
+      "background": "{semantic.primary}",
+      "foreground": "{semantic.primaryForeground}",
+      "hover": {
+        "background": "{neutral.200}"
+      },
+      "active": {
+        "background": "{neutral.300}"
+      }
+    }
+  }
+}
+```
+
+```rust
+let t = use_theme();
+t.state_fill("button.primary", ComponentState::Hover, "background");
+```
+
+`state_fill` tries `button.primary.hover.background` first, then the state fallback chain (`focus-visible` → `focus`,
+`pressed` → `active`, `open` → `active`, `indeterminate` → `checked`), then the base `button.primary.background`.
+`state_color` and `state_radius` behave identically.
+
+Raw and typed accessors for a specific path are available as `component`, `component_color`, `component_fill`, and
+`component_radius`.
+
+### Shadows
+
+Box-shadow and text-shadow presets mirror Tailwind v4.1. Size presets **replace** the current shadow layers (matching
+CSS `box-shadow:` / `text-shadow:` semantics); use the base `.shadow(..)` / `.text_shadow(..)` methods to append custom
+layers.
+
+```rust
+// Box shadow
+div()
+.shadow_sm()                  // small
+.shadow_lg()                  // large — replaces `sm`
+.shadow_color(blue_500());    // re-tint
+
+// Custom multi-layer box shadow
+div()
+.shadow(Shadow::new().y(2.0).blur(4.0).color(black().opacity(0.1)))
+.shadow(Shadow::new().y(8.0).blur(16.0).color(black().opacity(0.05)));
+
+// Text shadow
+text("Hi").text_shadow_md();
+text("Hi").text_shadow_lg().text_shadow_color(primary());
+```
+
+`shadow_color` / `text_shadow_color` recolor every currently-registered layer — they're meant to be chained *after* a
+size preset, matching Tailwind's `shadow-{size} shadow-{color}` pairing. Both require a **solid** tint and panic on
+gradients.
+
+**Per-element support:**
+
+| Element                              | Box shadow            | Text shadow            |
+|--------------------------------------|-----------------------|------------------------|
+| `div`, `button`, `checkbox`, `radio` | ✅                    | ❌ (no glyphs)         |
+| `input`                              | ✅ (outer `Div`)      | ✅ (inner `paragraph`) |
+| `text`, `p`                          | ❌ (no `.shadow(..)`) | ✅                     |
+| `icon`, `image`                      | ❌                    | ❌                     |
+
+Wrap in a `div().shadow_*()` when an element doesn't support the shadow you need.
+
+> Freya's `TextShadow::blur_sigma` is a **standard deviation**, not the CSS `blur-radius`. The presets apply
+> `sigma = radius / 2` (the SVG spec conversion), so they match Tailwind's visual output.
+
+## Theme schema
+
+A theme is a single JSON document. Four fields are required; everything else is optional and falls back to sensible
+defaults.
+
+### Required fields
+
+| Field        | Type                      | Notes                                           |
+|--------------|---------------------------|-------------------------------------------------|
+| `id`         | `string`                  | Stable identifier; used by `set_active(id)`.    |
+| `name`       | `string`                  | Display name shown in pickers.                  |
+| `appearance` | `"light"` \| `"dark"`     | Informational; drives sun/moon icons, branches. |
+| `semantic`   | `map<string, TokenValue>` | Core semantic tokens (see below).               |
+
+`semantic` should contain the standard set — `background`, `foreground`, `card`, `cardForeground`, `popover`,
+`popoverForeground`, `primary`, `primaryForeground`, `secondary`, `secondaryForeground`, `muted`, `mutedForeground`,
+`accent`, `accentForeground`, `destructive`, `destructiveForeground`, `border`, `input`, `ring`. Missing entries produce
+validation warnings on stderr but never fail the load. The bundled `themes/default-dark.json` and
+`themes/default-light.json` include the full recommended set and are the best starting point.
+
+### Optional fields
+
+| Field        | Type                             | Default | Notes                                                                            |
+|--------------|----------------------------------|---------|----------------------------------------------------------------------------------|
+| `version`    | `string`                         | `""`    | Semantic version string.                                                         |
+| `author`     | `string`                         | none    | Displayed in pickers/tooltips.                                                   |
+| `palette`    | `map<"family.step", hex>`        | `{}`    | Overrides the built-in Tailwind palette.                                         |
+| `colors`     | `map<"dotted.path", TokenValue>` | `{}`    | Flat component tokens. Overlaid onto `list`/`menu`/`table`.                      |
+| `components` | any JSON                         | `null`  | Free-form nested tokens. Not validated at load time.                             |
+| `list`       | `ListConfig`                     | `{}`    | Structured list theme (metrics + paint).                                         |
+| `menu`       | `MenuConfig`                     | `{}`    | Structured menu theme.                                                           |
+| `table`      | `TableConfig`                    | `{}`    | Structured table theme.                                                          |
+| `radius`     | `map<string, f32>`               | `{}`    | Named radius scale (`"sm": 4`, `"lg": 8`, …).                                    |
+| `spacing`    | `map<string, f32>`               | `{}`    | Named spacing scale (`"1": 4`, `"4": 16`, …).                                    |
+| `typography` | `TypographyConfig`               | `{}`    | Font stacks, sizes, weights (see below).                                         |
+| `shadows`    | `map<string, string>`            | `{}`    | Named CSS shadow strings. Declarative — see Notes.                               |
+| `motion`     | `MotionConfig`                   | `{}`    | Duration (`{ "fast": 150 }`) + easing (`{ "standard": "…" }`). Declarative only. |
+| `zIndex`     | `map<string, i32>`               | `{}`    | Named z-indices (`"modal": 1000`).                                               |
+
+### `TokenValue`
+
+Every colour value accepts one of these forms:
+
+| Form                         | JSON                                                                     |
+|------------------------------|--------------------------------------------------------------------------|
+| Hex                          | `"#ff8800"`, `"#fff"`, `"#fff8"` (with alpha)                            |
+| Palette reference            | `"{blue.500}"`                                                           |
+| Palette reference with alpha | `"{neutral.50}/10"` — `/NN` is 0–100, overwrites source alpha            |
+| Semantic reference           | `"{semantic.primary}"` (valid inside `semantic`, `components`, `colors`) |
+| Transparent                  | `"transparent"`                                                          |
+| Linear gradient              | `{ "linear": { "angle": 135, "stops": [Stop, …] } }`                     |
+| Radial gradient              | `{ "radial": { "center": [0.5, 0.5], "radius": 1.0, "stops": […] } }`    |
+| Conic gradient               | `{ "conic": { "angle": 0, "center": [0.5, 0.5], "stops": […] } }`        |
+
+A `Stop` is `{ "color": TokenValue, "at": 0.0..=100.0 }`. Gradient `center` and `radius` are parsed but currently
+ignored — Freya's gradient types only consume angle + stops.
+
+### `TypographyConfig`
 
 ```json
 {
-  "id": "default-dark",
-  "name": "Default Dark",
+  "fontFamily": {
+    "sans": "Inter, system-ui, sans-serif",
+    "mono": "JetBrains Mono"
+  },
+  "fontSize": {
+    "sm": [
+      12,
+      16
+    ],
+    "base": [
+      16,
+      24
+    ],
+    "lg": [
+      18,
+      28
+    ]
+  },
+  "fontWeight": {
+    "normal": 400,
+    "medium": 500,
+    "bold": 700
+  }
+}
+```
+
+`fontSize` values are `[size_px, line_height_px]` pairs. `line_height` is parsed but the `text_*` shortcuts currently
+only use `size`.
+
+### `ListConfig` / `MenuConfig` / `TableConfig`
+
+Each structured block accepts optional paint + metric keys. Individual `colors` entries (`"list.row.hover"`,
+`"menu.item.selected"`, …) override the corresponding block field, so a minimal block for metrics + `colors` for paint
+is a valid split.
+
+| Config  | Paint keys                                                                                                                                         | Metric keys                                                                      |
+|---------|----------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
+| `list`  | `background`, `border`, `rowBackground`, `rowHover`, `rowSelected`, `rowActive`, `rowForeground`, `rowSelectedForeground`, `rowDisabledForeground` | `rowHeight` (32), `rowPaddingX` (12), `rowPaddingY` (6), `radius` (6), `gap` (0) |
+| `menu`  | `background`, `border`, `itemHover`, `itemSelected`, `itemForeground`, `separator`                                                                 | `radius` (6), `itemPaddingX` (10), `itemPaddingY` (6)                            |
+| `table` | `background`, `border`, `headerBackground`, `headerForeground`, `rowHover`, `rowSelected`                                                          | `cellPaddingX` (12), `cellPaddingY` (8), `radius` (6)                            |
+
+### Full example
+
+```json
+{
+  "id": "my-app-dark",
+  "name": "My App Dark",
   "appearance": "dark",
   "version": "1.0.0",
-  "author": "FreyaCN",
+  "author": "you",
   "palette": {
     "brand.500": "#7c3aed",
     "brand.600": "#6d28d9"
@@ -138,34 +473,12 @@ Every theme is a single JSON document with a stable, documented shape:
   "semantic": {
     "background": "{neutral.950}",
     "foreground": "{neutral.50}",
-    "card": "{neutral.900}",
-    "cardForeground": "{neutral.50}",
-    "popover": "{neutral.900}",
-    "popoverForeground": "{neutral.50}",
-    "primary": "{neutral.50}",
-    "primaryForeground": "{neutral.900}",
-    "secondary": "{neutral.800}",
-    "secondaryForeground": "{neutral.50}",
-    "muted": "{neutral.800}",
+    "primary": "{brand.500}",
+    "primaryForeground": "{neutral.50}",
+    "muted": "{neutral.900}",
     "mutedForeground": "{neutral.400}",
-    "accent": "{neutral.800}",
-    "accentForeground": "{neutral.50}",
-    "destructive": "{red.600}",
-    "destructiveForeground": "{neutral.50}",
-    "success": "{green.600}",
-    "successForeground": "#ffffff",
-    "warning": "{amber.500}",
-    "warningForeground": "{neutral.950}",
-    "info": "{blue.500}",
-    "infoForeground": "#ffffff",
     "border": "{neutral.50}/10",
-    "input": "{neutral.50}/15",
-    "ring": "{neutral.500}",
-    "placeholder": "{neutral.500}",
-    "link": "{blue.400}",
-    "linkHover": "{blue.300}",
-    "disabled": "{neutral.800}",
-    "disabledForeground": "{neutral.500}"
+    "ring": "{brand.500}"
   },
   "components": {
     "button": {
@@ -173,28 +486,22 @@ Every theme is a single JSON document with a stable, documented shape:
         "background": "{semantic.primary}",
         "foreground": "{semantic.primaryForeground}",
         "hover": {
-          "background": "{neutral.200}"
+          "background": "{brand.600}"
         },
         "active": {
-          "background": "{neutral.300}"
-        },
-        "disabled": {
-          "background": "{semantic.disabled}",
-          "foreground": "{semantic.disabledForeground}"
+          "background": "{brand.600}"
         }
       }
     }
   },
   "radius": {
-    "sm": 6,
-    "md": 8,
-    "lg": 10,
-    "xl": 14
+    "sm": 4,
+    "md": 6,
+    "lg": 8
   },
   "spacing": {
     "1": 4,
     "2": 8,
-    "3": 12,
     "4": 16
   },
   "typography": {
@@ -209,29 +516,12 @@ Every theme is a single JSON document with a stable, documented shape:
       "base": [
         16,
         24
-      ],
-      "lg": [
-        18,
-        28
       ]
     },
     "fontWeight": {
       "normal": 400,
       "medium": 500,
       "bold": 700
-    }
-  },
-  "shadows": {
-    "sm": "0 1px 2px rgba(0,0,0,0.05)",
-    "md": "0 4px 6px rgba(0,0,0,0.1)"
-  },
-  "motion": {
-    "duration": {
-      "fast": 150,
-      "normal": 250
-    },
-    "easing": {
-      "standard": "cubic-bezier(0.2, 0, 0, 1)"
     }
   },
   "zIndex": {
@@ -241,729 +531,351 @@ Every theme is a single JSON document with a stable, documented shape:
 }
 ```
 
-Only `id`, `name`, `appearance`, and `semantic` are required. Everything else
-is optional and falls back to sensible defaults. `semantic` should contain
-the standard token set (see below); missing tokens emit validation warnings
-but do not fail the load. Two ready-to-use themes — `default-dark.json` and
-`default-light.json` — ship alongside the crate and include the full
-recommended token set.
-
-## Semantic tokens
-
-`semantic` is the theme's public vocabulary. Any key you put in it becomes
-addressable as `theme.<key>()` (returns `Color`) or `theme.<key>_fill()`
-(returns `Fill`, so gradients work too). FreyaCN ships with named getters for
-the standard set:
-
-- `background`, `foreground`
-- `card`, `card_foreground`
-- `popover`, `popover_foreground`
-- `primary`, `primary_foreground`
-- `secondary`, `secondary_foreground`
-- `muted`, `muted_foreground`
-- `accent`, `accent_foreground`
-- `destructive`, `destructive_foreground`
-- `success`, `success_foreground`
-- `warning`, `warning_foreground`
-- `info`, `info_foreground`
-- `border`, `input`, `ring`
-- `placeholder`, `link`, `link_hover`
-- `disabled`, `disabled_foreground`
-- `sidebar`, `sidebar_foreground`, `sidebar_primary`,
-  `sidebar_primary_foreground`, `sidebar_accent`, `sidebar_accent_foreground`,
-  `sidebar_border`, `sidebar_ring`
-- `chart_1` … `chart_5`
-
-Each has a matching `_fill` variant for gradient support. Any extra key you
-add is available via `theme.color("myToken")` / `theme.fill("myToken")`.
-
-### Class-string tokens
-
-Colour utilities in class strings (`bg-*`, `text-*`, `border-*`, `ring-*`)
-resolve their name in three steps:
-
-1. The built-in Tailwind palette (`blue-500`, `neutral-950`, `white`, …).
-2. The active theme's **fill** map (`primary`, `primaryForeground`,
-   `background`, `foreground`, …).
-3. The active theme's **color** map (`ring`, `border`, `input` — border-only
-   tokens).
-
-Tailwind class names are kebab-case (`text-primary-foreground`); theme keys
-are camelCase (`primaryForeground`). Both spellings resolve, so
-`.style("text-primary-foreground")` finds `primaryForeground` in the theme
-JSON without any extra wiring.
-
-## Palette references
-
-Every colour value can be written in one of these forms:
-
-| Form                                          | Example                |
-|-----------------------------------------------|------------------------|
-| Hex                                           | `"#ffffff"`            |
-| Palette reference                             | `"{blue.500}"`         |
-| Palette reference + alpha suffix              | `"{neutral.950}/24"`   |
-| Semantic reference (inside `components` only) | `"{semantic.primary}"` |
-
-Palette references resolve against the full Tailwind scale built into
-`colors` — `stone`, `mauve`, `olive`, `mist`, `taupe`, `slate`, `gray`,
-`zinc`, `neutral`, `red`, `orange`, `amber`, `yellow`, `lime`, `green`,
-`emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`,
-`fuchsia`, `pink`, `rose` — plus `white`, `black`, and `transparent`.
-
-The `/NN` suffix is a percentage (0–100): `{neutral.50}/10` is white at 10 %
-opacity. Alpha suffixes work on solid colours and palette references, not on
-gradients.
-
-**`palette` overrides.** A theme may declare its own palette entries at the
-top level. Keys are `"group.step"` and values are hex strings; they take
-precedence over the built-in scale and can be referenced with `{group.step}`
-like any other palette entry.
-
-**`{semantic.*}` references.** These resolve inside `components` **and**
-inside `semantic` itself. Semantic-token resolution is iterative — tokens
-that reference other tokens are retried until they resolve, and a cycle
-produces a clear error naming the involved tokens.
-
-## Gradients
-
-`linear`, `radial`, and `conic` gradients are first-class citizens of the
-token grammar:
-
-```json
-"heroGradient": {
-  "linear": {
-    "angle": 135,
-    "stops": [
-      {
-        "color": "{blue.700}",
-        "at": 0
-      },
-      {
-        "color": "{violet.600}",
-        "at": 100
-      }
-    ]
-  }
-}
-```
-
-Read them back with `theme.fill("heroGradient")` — you get a `Fill` that maps
-directly onto Freya's `LinearGradient`, `RadialGradient`, or `ConicGradient`.
-`{palette.step}` references inside gradient stops resolve normally;
-`{semantic.*}` references inside stops are not currently supported (use
-palette refs or hex there). Shader fills and `RenderCallback` fills remain
-Rust-only, since they cannot be serialized to JSON.
-
-> **Note:** `radial` and `conic` accept `center` and (for radial) `radius`
-> fields for forward compatibility, but Freya's gradient types currently only
-> consume angle and stops. Those fields are parsed and ignored.
-
-## Component tokens
-
-`components` is free-form. Nest as deep as your component tree needs. Each
-leaf is a token value — a colour reference, a gradient object, a number, or a
-keyword — resolved lazily through dotted paths:
-
-```rust
-t.component("button.primary");                  // Option<&serde_json::Value>
-t.component_color("button.primary.background"); // Option<Color>
-t.component_fill("button.primary.background");  // Option<Fill>
-t.component_radius("button.primary.radius");    // Option<f32>
-
-// State-aware variants:
-t.state_color("button.primary", ComponentState::Hover, "background");
-t.state_fill("button.primary", ComponentState::Hover, "background");
-t.state_radius("button.primary", ComponentState::Hover, "radius");
-```
-
-`component_radius` accepts either a number or a string naming a key in the
-theme's `radius` map.
-
-`state_*` looks up `button.primary.hover.background` first, then falls back
-to `button.primary.background`. Precedence (e.g. `active` over `hover`) is
-the caller's responsibility — pass exactly one `ComponentState`.
-
-The `ComponentState` enum mirrors gpui-kit's state model:
-
-```
-Base, Hover, Active, Focus, FocusVisible, Disabled,
-Checked, Indeterminate, Selected, Pressed, Open
-```
-
-A component defines its own variants in JSON:
-
-```json
-"button": {
-  "primary": {
-    "background": "{semantic.primary}",
-    "foreground": "{semantic.primaryForeground}",
-    "hover": {
-      "background": "{neutral.200}"
-    },
-    "active": {
-      "background": "{neutral.300}"
-    },
-    "disabled": {
-      "background": "{semantic.disabled}",
-      "foreground": "{semantic.disabledForeground}"
-    }
-  },
-  "destructive": {
-    "background": "{semantic.destructive}",
-    "foreground": "{semantic.destructiveForeground}",
-    "hover": {
-      "background": "{red.500}"
-    }
-  }
-}
-```
-
-No schemas to maintain, no code to regenerate. Adding a new component to the
-theme is adding a new key to the JSON.
-
-## Loading a theme
-
-Three entry points, in increasing level of control:
-
-```rust
-// From a bundled string (the common case). Installs the theme as the
-// thread-local active theme and provides reactive state to the subtree.
-let themes = use_init_theme_registry(include_str!("../themes/default-dark.json"));
-
-// From a directory of `.json` files. Auto-activates the first one loaded.
-let themes = load_theme_registry_from_dir(std::path::Path::new("themes"));
-
-// Or manage the registry yourself. Note: this does *not* install the theme
-// into Freya's context or the thread-local active theme — it is for
-// standalone token resolution (tests, tooling, previews).
-let registry = ThemeRegistry::new();
-registry.load(include_str!("../themes/default-dark.json"));   // panics on error
-registry.load(include_str!("../themes/default-light.json"));
-registry.set_active("default-light") ?;
-```
-
-The two `use_init_*` / `load_theme_registry*` functions return a
-`ThemeHandle`, which bundles the registry with Freya's reactive
-`State<Arc<Theme>>` and is what you want inside a component tree.
-
-`ThemeRegistry::load` validates each theme on load: missing required semantic
-tokens and low-contrast `foreground` / `background` pairs are reported to
-stderr as warnings in debug builds, but never fail the load. Use `try_load` /
-`try_load_dir` / `try_reload_dir` if you need a `Result` instead of the
-panicking variants.
-
-For lower-level use, `Theme::try_from_json_str` and `Theme::try_from_config`
-parse and resolve a single theme without touching the registry. The panicking
-`Theme::from_json_str` / `Theme::from_config` are the same but panic on error.
-
 ## Switching themes
 
-`ThemeHandle::set_active` updates all three pieces of the theme system
-atomically:
-
 ```rust
-themes.set_active("default-light") ?;
+let themes = use_theme_handle();
+themes.set_active("default-light") ?;   // returns Result<(), ThemeError>
 ```
 
-- The **thread-local active theme** is swapped, so the next `Style::default()`
-  reads the new colours.
-- The **`State<Arc<Theme>>`** is bumped, so any component that subscribes via
-  `use_cn_theme()` re-renders against the new values.
-- The registry's internal active id is updated.
+`ThemeHandle::set_active` updates three things together:
 
-All three are needed. `Style::default()` gives new elements the right
-baseline; `use_cn_theme()` gives existing elements a reason to rebuild their
-`Style`.
+- The thread-local active theme, so the next `Style::default()` reads the new colours.
+- The reactive `State<Arc<Theme>>`, so any component subscribed via `use_cn_theme()` re-renders.
+- The registry's internal active id.
 
-> The raw `ThemeRegistry::set_active` only updates the registry's active id.
-> Use it for token resolution outside Freya; use `ThemeHandle::set_active`
-> inside the UI.
+All three are required: `Style::default()` seeds new elements with the right baseline; `use_cn_theme()` gives existing
+elements a reason to rebuild their style.
+
+To enumerate available themes (for a picker, settings panel, etc.):
+
+```rust
+for info in themes.theme_infos() {
+// info.id, info.name, info.appearance, info.version, info.author
+}
+```
+
+`theme_infos()` is sorted by name, then id, and clones only five small fields per theme — cheap enough to call every
+render.
+
+> The lower-level `ThemeRegistry::set_active` only updates the registry's active id. Use `ThemeHandle::set_active`inside
+> components.
 
 ## Hot reload
 
 ```rust
-themes.reload_dir(std::path::Path::new("themes"));
+themes.reload_dir("themes");
 ```
 
-Re-reads every `.json` in the directory and replaces the loaded themes in
-place. The currently active theme is refreshed automatically if it changed on
-disk. There is no watcher thread by default — wire `reload_dir` to a `notify`
-handle, a keyboard shortcut, or your dev-tool of choice.
+Re-reads every `.json` in the directory, replaces entries with matching ids, and refreshes the active theme if it
+changed on disk. New files are added; removed files are not pruned (call `registry.remove(id)` first if you need that).
 
-> Removed files are not pruned from the registry. Call `registry.remove(id)`
-> first if you need to drop a theme.
+There is no watcher thread. Wire `reload_dir` to `notify`, a keyboard shortcut, or your dev-tool of choice.
 
-## Reading tokens in components
+## Extensions
 
-Colours, radii, and spacing are all available through named getters:
+Two traits extend `Style`: `StyledExt` (numeric + keyword shortcuts) and `ThemedExt` (theme-path helpers). Both work on
+any element, and every method returns `Self` so they chain.
+
+### `StyledExt` — Tailwind-shaped shortcuts
+
+Every numeric scale accepts the Tailwind steps (`0`, `1`, `2`, `3`, `4`, `6`, `8`, …) and the shorthand keywords
+(`full`, `auto`, `px`, `screen`). All of these also work as class strings.
+
+| Category           | Methods                                                                                                                                                                                                                                                                                                                                                                                              |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Spacing            | `p_N`, `px_N`, `py_N`, `pt_N`, `pr_N`, `pb_N`, `pl_N`, `m_N`, `mx_N`, `my_N`, `mt_N`, `mr_N`, `mb_N`, `ml_N`, `gap_N`, `gap_x_N`, `gap_y_N`                                                                                                                                                                                                                                                          |
+| Sizing             | `w_N`, `h_N`, `size_N`, `min_w_N`, `max_w_N`, `min_h_N`, `max_h_N`, `w_full`, `h_full`, `w_auto`, `h_auto`, `w_px`, `h_px`, `w_screen`, `h_screen`                                                                                                                                                                                                                                                   |
+| Layout             | `flex`, `flex_col`, `flex_row`, `flex_wrap`, `flex_nowrap`, `justify_start`, `justify_end`, `justify_center`, `justify_between`, `justify_around`, `justify_evenly`, `items_start`, `items_end`, `items_center`, `items_baseline`, `items_stretch`                                                                                                                                                   |
+| Radius             | `rounded_{none,xs,sm,md,lg,xl,2xl,3xl,full}`, `rounded_t_*`, `rounded_r_*`, `rounded_b_*`, `rounded_l_*`, `rounded_tl_*`, `rounded_tr_*`, `rounded_br_*`, `rounded_bl_*`                                                                                                                                                                                                                             |
+| Border             | `border`, `border_0`, `border_2`, `border_4`, `border_8`, `border_[Npx]`, `border_n_*`, `border_s_*`, `border_e_*`, `border_w_*`                                                                                                                                                                                                                                                                     |
+| Ring               | `ring`, `ring_0`, `ring_1`, `ring_2`, `ring_4`, `ring_8`, `ring_[Npx]` (maps to border — see Notes)                                                                                                                                                                                                                                                                                                  |
+| Typography         | `text_{xs,sm,base,lg,xl,2xl,3xl,…}`, `font_{thin,light,normal,medium,semibold,bold,extrabold,black}`, `font_sans`, `font_serif`, `font_mono`, `italic`, `not_italic`, `underline`, `line_through`, `uppercase`, `lowercase`, `capitalize`, `normal_case`, `truncate`, `text_left`, `text_center`, `text_right`                                                                                       |
+| Effects            | `opacity_{0,5,10,20,25,30,40,50,60,70,75,80,90,95,100}`, `rotate_{0,1,2,3,6,12,45,90,180}`, `rotate_neg_{1,2,3,6,12,45,90,180}`, `scale_{0,50,75,90,95,100,105,110,125,150,200}`, `blur_{none,2xs,xs,sm,md,lg,xl,2xl,3xl}`, `backdrop_blur_{none,2xs,xs,sm,md,lg,xl,2xl,3xl}`, `overflow_{none,clip}`                                                                                                |
+| Shadows            | `shadow_{2xs,xs,sm,md,lg,xl,2xl,inner}`, `shadow_none`, `shadow_color(..)`                                                                                                                                                                                                                                                                                                                           |
+| Text shadows       | `text_shadow_{2xs,xs,sm,md,lg}`, `text_shadow_none`, `text_shadow_color(..)`                                                                                                                                                                                                                                                                                                                         |
+| Z-index            | `z_0`, `z_10`, `z_20`, `z_30`, `z_40`, `z_50`, `z_auto`                                                                                                                                                                                                                                                                                                                                              |
+| Colours (raw)      | `bg_<family>_<step>`, `text_<family>_<step>`, `border_<family>_<step>` — every Tailwind palette family                                                                                                                                                                                                                                                                                               |
+| Colours (semantic) | `bg_<token>`, `text_<token>`, `border_<token>` — `bg_background`, `text_foreground`, `bg_primary`, `text_primary_foreground`, `border_border`, `ring_ring`, …                                                                                                                                                                                                                                        |
+| Variants           | `dark(…)`, `hover(…)`, `focus(…)`, `focus_visible(…)`, `focus_within(…)`, `active(…)`, `disabled(…)`, `checked(…)`, `selected(…)`, `has_svg(…)`, `has_img(…)`, `has_checked(…)`, `has_selected(…)`, `has_disabled(…)`, `aria_invalid(…)`, `aria_checked(…)`, `aria_disabled(…)`, `aria_expanded(…)`, `aria_pressed(…)`, `aria_readonly(…)`, `aria_required(…)`, `aria_selected(…)`, `aria_hidden(…)` |
+
+### `ThemedExt` — theme-path helpers
+
+Resolve a token path against an `Arc<Theme>` without unwrapping `Option` at every call site:
 
 ```rust
-use freyacn::prelude::*;
-
-fn Card() -> impl IntoElement {
-    let t = use_theme();                 // Arc<Theme>
-
-    div()
-        .bg(t.card_fill())               // Fill, handles gradients
-        .text_color(t.card_foreground()) // Color
-        .radius(t.radius("lg"))          // f32 → CornerRadius
-        .padding(t.spacing("4"))         // f32
-        .child(/* ... */)
-}
-```
-
-`Style::default()` seeds `background` and `text_color` from the active theme
-automatically — every element inherits the theme's baseline without any code.
-Explicit `.bg(..)` / `.text_color(..)` calls (or `.bg_token(..)` below)
-override that default:
-
-```rust
-// Without any StyledExt calls, the div is already themed.
-div().child(text("Hi"));
-
-// This overrides the theme default.
-div().bg(blue_500()).text_color(neutral_50());
-
-// This asks the theme for a specific token.
 let t = use_theme();
-div().bg_token( & t, "primary");
-```
 
-`Style::bare()` gives you a `Style` with no theme influence at all — handy for
-tests, snapshots, and previews. `Style::themed(&Theme)` builds one from an
-explicit theme, ignoring the thread-local.
-
-When no theme has been installed at all, `Style::default()` falls back to a
-cached `Theme::empty_light()` so it never panics (useful in headless tests).
-
-Convenience helpers:
-
-```rust
-// Clone the current theme value out of the reactive state.
-let theme: Arc<Theme> = use_theme();
-
-// Like `use_cn_theme()`, but falls back to the empty light theme when no
-// provider exists instead of panicking.
-let theme = get_cn_theme_or_default();
-```
-
-At a lower level, the thread-local active theme can be read or written
-directly:
-
-```rust
-set_active_theme(Arc::new(my_theme));
-let current: Arc<Theme> = active_theme();
-```
-
-## Themed builder helpers
-
-`ThemedExt` extends `StyledExt` with token-path lookups so you don't have to
-unwrap `Option`s at every call site:
-
-```rust
-let t = use_theme();                           // Arc<Theme>
 div()
-.bg_token( & t, "primary")                   // semantic → Fill
-.text_token( & t, "primaryForeground")       // semantic → Fill
-.radius_token( & t, "lg")                    // radius map → f32
-.p_token( & t, "4")                          // spacing map → f32
+.bg_token( & t, "primary")             // semantic → Fill
+.text_token( & t, "primaryForeground") // semantic → Fill
+.radius_token( & t, "lg")              // radius map → f32
+.p_token( & t, "4")                    // spacing map → f32
 .gap_token( & t, "2")
 .hover({
 let t = t.clone();
 move | s | s.bg_component( & t, "button.primary", ComponentState::Hover, "background")
 })
-.active({
-let t = t.clone();
-move | s | s.bg_component( & t, "button.primary", ComponentState::Active, "background")
-});
 ```
 
-The state-variant closures capture the theme by `Arc` (cheap — the handle is
-already shared), so they see the current theme every time the closure runs.
+`*_token` variants read the semantic map and panic on missing keys (fail-fast: a typo should not silently render a black
+box). `*_component` variants read the nested `components` tree with the same per-state fallback as `Theme::state_fill`.
 
-## The `Style::bare()` invariant
+The variant closures capture the theme by `Arc` (cheap — the handle is already shared), so they always see the current
+theme when the closure runs.
 
-One rule matters more than the rest when working with `#[variant]` and
-`#[component]`:
-
-**`Style::bare()` is the patch layer. `Style::default()` is the theme layer.**
-
-Concretely:
-
-- `ComponentVariant::resolve()` (generated by `#[variant]`) starts from
-  `Style::bare()` and folds the variant's class string on top.
-- The `styled` extension's `self.style` field starts from `Style::bare()` and
-  collects whatever the user chained (`.style("…")`, `.bg(..)`, `.p_4()`).
-- `#[component]`'s fold starts from `Style::default()` — the theme layer —
-  and merges variant, size, and `self.style` on top in that order.
-
-Why it matters: `merge_style` copies a field only if it differs from
-`bare()`. If `resolve()` returned `Style::default()`, the theme's
-`text_color = foreground` would leak into the merge chain and silently
-overwrite whatever the variant's class string set. Starting from `bare()`
-keeps each overlay a **sparse patch** — only fields the layer explicitly set
-are non-bare, and the merge only copies those.
-
-This is what lets a shadcn-style `ButtonVariant::Default` with
-`text-primary-foreground` render with the *correct* text colour instead of
-the theme's default `foreground`.
-
-## Migration from the old API
-
-The shadcn-shaped `Theme::dark().neutral().theme_color("blue")` API has been
-removed. The equivalent today is loading a JSON file whose `semantic` block
-declares what `primary`, `background`, etc. should point at. If you need to
-express a palette override that used to be `theme_color("blue")`, put a
-`{blue.NNN}` reference directly in the semantic block or add a `palette`
-override section at the top of the JSON.
-
-The old `Colors` struct is gone — palette lookups now go through the functions
-in `colors` (`blue_500()`, `neutral_950()`, …) and resolve to `StyledColor`.
-
----
-
-# State variants
-
-Both `StyledExt` and `StyledString` support pseudo-state patches. The full
-list of prefixes:
-
-| Prefix           | State                               |
-|------------------|-------------------------------------|
-| `dark:`          | Dark appearance                     |
-| `hover:`         | Pointer over                        |
-| `focus:`         | Focused                             |
-| `focus-visible:` | Focused via keyboard                |
-| `focus-within:`  | Focused or has a focused descendant |
-| `active:`        | Pressed                             |
-| `disabled:`      | Disabled                            |
-| `checked:`       | Checked                             |
-| `selected:`      | Selected                            |
-| `aria-invalid:`  | Invalid                             |
-| `aria-checked:`  | Aria-checked                        |
-| `aria-disabled:` | Aria-disabled                       |
-| `aria-expanded:` | Expanded                            |
-| `aria-pressed:`  | Pressed (toggle)                    |
-| `aria-readonly:` | Read-only                           |
-| `aria-required:` | Required                            |
-| `aria-selected:` | Aria-selected                       |
-| `aria-hidden:`   | Hidden                              |
-
-Stacked prefixes compose: `dark:aria-invalid:bg-red-500` fires only when *both* dark and aria-invalid are active.
+## Elements
 
 ```rust
 use freyacn::prelude::*;
 
-// Fluent
-let style = Style::default ()
-.bg(blue_500())
-.p_4()
-.hover( | s| s.bg(blue_700()))
-.focus( | s| s.bg(blue_600()))
-.aria_invalid( | s| s.border_color(red_500()));
+#[component]
+fn Toolbar() {
+    div()
+        .style("flex-col gap-2 p-4")
+        .child(text("Title").style("text-lg font-bold"))
+        .child(
+            button()
+                .style("bg-primary text-primary-foreground p-2 rounded-md")
+                .child(text("Continue")),
+        )
+}
+```
 
-// Class string
-let style = Style::default ().style(
-"bg-primary p-4 hover:bg-primary/90 focus:bg-primary/95 \
-     aria-invalid:border-destructive aria-invalid:ring-destructive/20"
+Elements share the same `Style`, variant, and inheritance model as everything else, so a utility that works on a raw
+`div` works on a `button` here.
+
+If you need a plain helper function rather than a `#[component]`, give it `-> impl IntoElement` and end with the element
+expression:
+
+```rust
+fn title(label: &str) -> impl IntoElement {
+    text(label).style("text-lg font-bold")
+}
+```
+
+## Presets
+
+Two optional component sets ship as feature-gated sibling crates. Each re-exports through the `freyacn` facade at its
+own module path, and each brings its own default theme on top of the standard FreyaCN JSON themes.
+
+### shadcn
+
+Enabled by the `shadcn` feature. Re-exports `freyacn_shadcn` — pre-built shadcn/ui components, styled through FreyaCN's
+theme system so they inherit the active theme's tokens (`primary`, `primaryForeground`, `muted`, `border`, …) without
+per-component configuration.
+
+```rust
+use freyacn::prelude::*;
+use freyacn::shadcn::{Button, Card};
+
+#[component]
+fn App() {
+    let _themes = load_theme("themes/default-dark.json");
+    Card()
+        .child(text("Welcome"))
+        .child(Button().child(text("Continue")))
+}
+```
+
+The shadcn component set follows the same `Style` / variant / inheritance model as everything else, so all the utilities
+documented above work on shadcn components too — `.style("hover:bg-primary/90")`, `.shadow_md()`, `.has-[svg]:pl-3`, and
+so on.
+
+### material3
+
+Enabled by the `material3` feature. Re-exports `freyacn_material3` — Material Design 3 components with the MD3 tonal
+palette (`primaryContainer`, `surfaceVariant`, `onSurface`, …) exposed as semantic tokens in the corresponding theme.
+
+```rust
+use freyacn::prelude::*;
+use freyacn::material3::FilledButton;
+
+#[component]
+fn App() {
+    let _themes = load_theme("themes/default-dark.json");
+    FilledButton::default().child(text("Continue"))
+}
+```
+
+The same style utilities, the same theme layering, and the same inheritance rules apply to Material 3 components.
+
+### Combining presets
+
+`features = ["all"]` (or `features = ["full"]`) enables both. The two sets are independent — shadcn components don't
+need material3 enabled, and vice versa — so you can pull in only what you use and keep compile times down.
+
+## Macros
+
+### `#[variant]`
+
+Turns an enum into a class-string provider. Each variant carries a `#[variant("…")]` attribute holding a class string,
+and the generated `style_str()` returns it. `resolve()` folds the class string onto `Style::bare()` so variants compose
+as sparse patches.
+
+```rust
+use freyacn::prelude::*;
+
+#[variant]
+#[derive(Clone, Copy, Default)]
+enum ButtonVariant {
+    #[default]
+    #[variant("bg-primary text-primary-foreground hover:bg-primary/90")]
+    Default,
+    #[variant("bg-destructive text-destructive-foreground hover:bg-destructive/90")]
+    Destructive,
+    #[variant("bg-secondary text-secondary-foreground hover:bg-secondary/80")]
+    Secondary,
+}
+
+ButtonVariant::Default.style_str();
+// → "bg-primary text-primary-foreground hover:bg-primary/90"
+
+ButtonVariant::Default.resolve();
+// → Style starting from Style::bare(), with the class string folded on top
+```
+
+Implement `ComponentVariant` (which `#[variant]` does) to consume variants from `#[component]` below.
+
+### `#[component]`
+
+Generates a component function that folds its arguments into a single `Style`, merges variant and size on top, and
+returns `impl IntoElement`. The `ext(…)` attribute adds extra parameters — `ext(children)` gives the component Freya's
+`children` parameter, which it can forward with `.children(children.clone())`.
+
+```rust
+#[component]
+fn ActionButton(label: String) {
+    button()
+        .style("px-4 py-2 rounded-md bg-primary text-primary-foreground")
+        .child(text(label))
+}
+
+// With `ext(children)` and a variant argument:
+#[component(ext(children))]
+fn VariantButton(variant: ButtonVariant) {
+    button()
+        .style("px-4 py-2 rounded-md")
+        .merge_style(variant.resolve())
+        .children(children.clone())
+}
+```
+
+The fold order is: `Style::default()` (theme baseline) → variant → size → `self.style` (whatever the caller chained).
+See "How the layers fit" for why each layer starts where it does, and for how the variant list accumulates across that
+chain.
+
+### `#[struct_fields]`
+
+**`#[struct_fields]` is not a standalone attribute.** It's a modifier for `#[component]` that injects extra fields into
+the generated props struct. It must be placed **below** `#[component(...)]` — attributes are processed top-to-bottom,
+and `#[component]` consumes `#[struct_fields]` to build the struct. Placing it above produces a compile error with a
+helpful message.
+
+```rust
+#[component]
+#[struct_fields(tooltip: Option<MyTooltip>, on_dismiss: EventHandler<()>)]
+fn Card(title: String) {
+    // `self.tooltip` and `self.on_dismiss` are available inside the
+    // component body alongside the declared parameters.
+}
+```
+
+Each entry follows `field_name: Type` syntax. Multiple fields are comma-separated. Callers construct the component with
+`.tooltip(..)` / `.on_dismiss(..)` builder methods generated from the injected fields, on top of the ones derived from
+the function parameters.
+
+Combining with `ext(…)`:
+
+```rust
+#[component(ext(children))]
+#[struct_fields(tooltip: Option<MyTooltip>)]
+fn Badge(label: String) {
+    div()
+        .style("inline-flex items-center rounded-full px-2 py-0.5")
+        .children(children.clone())
+        .child(text(label))
+}
+```
+
+### `cn!`
+
+Joins class strings, skipping `None` / `false` entries:
+
+```rust
+let classes = cn!(
+    "px-4 py-2",
+    active.then_some("bg-primary"),
+    None::<&str>,
+    "rounded-md",
 );
+// → "px-4 py-2 bg-primary rounded-md"
 ```
 
-The invariant that keeps this sane: **rebuild the base `Style` every render,
-apply the live variant set to a clone for that pass only.** Ending a variant
-is the absence of an entry in the next render — there is no "un-hover"
-callback, and precedence between overlapping variants is fixed:
-
-```
-dark < hover < focus < focus-visible < focus-within
-    < selected < aria-selected < checked < aria-checked
-    < active < aria-expanded < aria-pressed < aria-invalid
-    < aria-required < aria-readonly < aria-hidden
-    < aria-disabled < disabled
-```
-
-So `aria-invalid:*` beats `hover:*`, but `disabled:*` beats `aria-invalid:*`.
-See the `styling` module docs for the full explainer.
-
-### Driving aria variants
-
-Class strings register the `aria-*:` patches, but they only fire when the
-corresponding state is active. The `HasSemanticEvents` trait — implemented by
-every interactive element — exposes builders that flip each one:
-
-```rust
-use freyacn::prelude::*;
-
-input(value)
-.with_aria_invalid( ! form_is_valid)
-.with_aria_required(true)
-.style("aria-invalid:border-destructive aria-required:border-amber-500")
-```
-
-Available: `.with_aria_invalid(..)`, `.with_aria_checked(..)`,
-`.with_aria_disabled(..)`, `.with_aria_expanded(..)`, `.with_aria_pressed(..)`,
-`.with_aria_readonly(..)`, `.with_aria_required(..)`, `.with_aria_selected(..)`,
-`.with_aria_hidden(..)`. Or replace the whole bundle with `.aria_state(state)`.
-
-`with_disabled` / `with_checked` / `with_selected` on interactive elements
-set **both** the native flag and the aria state, so `disabled:*` and
-`aria-disabled:*` fire together from a single call.
-
-Variant closures can read theme tokens just as easily as base styles — wrap
-the theme in `move |s| s.bg_component(&theme, path, state, field)` to resolve
-a state token against the JSON at the moment the variant fires.
-
----
-
-# Ring utilities
-
-Freya has no separate `ring` model, so `ring-*` utilities map onto the same
-`Border` struct:
-
-- `ring` → 3 px border (Tailwind v4 default)
-- `ring-0` … `ring-8` → border width
-- `ring-[3px]` → arbitrary width
-- `ring-<color>[/<alpha>]` → border colour (e.g. `ring-ring/50`,
-  `ring-destructive/20`)
-
-This makes the shadcn pattern
-`focus-visible:ring-[3px] focus-visible:ring-ring/50` work as written — the
-2-in-1 "ring" collapses into a 3 px border tinted with the theme's `ring`
-colour at 50 % alpha.
-
-**Caveat:** the "ring" and the "border" share the same `Border`. You can't
-have both a visible border and a separate ring at once. If you need them
-independently, wrap the element in a `div()` and put the ring on the wrapper.
-
----
-
-# Additional API surface
-
-A quick reference for the pieces not covered above.
-
-### `Theme`
-
-```rust
-impl Theme {
-    // Construction — the *panicking* variants are convenient; use the
-    // `try_*` ones when you need to handle errors.
-    pub fn from_json_str(s: &str) -> Self;
-    pub fn try_from_json_str(s: &str) -> Result<Self, ThemeError>;
-    pub fn from_config(cfg: ThemeConfig) -> Self;
-    pub fn try_from_config(cfg: ThemeConfig) -> Result<Self, ThemeError>;
-    pub fn empty_light() -> Self;
-
-    // Metadata
-    pub fn metadata(&self) -> ThemeInfo;
-
-    // Semantic
-    pub fn fill(&self, key: &str) -> Option<Fill>;
-    pub fn color(&self, key: &str) -> Option<Color>;
-
-    // Flat tokens (from `colors`)
-    pub fn token_fill(&self, path: &str) -> Option<Fill>;
-    pub fn token_color(&self, path: &str) -> Option<Color>;
-    pub fn token(&self, path: &str) -> Option<ThemeToken>;
-
-    // Scales — `*_or` variants take an explicit fallback
-    pub fn radius(&self, key: &str) -> f32;          // falls back to 8.0
-    pub fn radius_or(&self, key: &str, fb: f32) -> f32;
-    pub fn spacing(&self, key: &str) -> f32;         // falls back to 0.0
-    pub fn spacing_or(&self, key: &str, fb: f32) -> f32;
-    pub fn font_size_or(&self, keys: &[&str], fb: f32) -> f32;
-    pub fn font_weight_or(&self, keys: &[&str], fb: u16) -> u16;
-    pub fn font_family_stack(&self, key: &str) -> Option<Vec<Cow<'static, str>>>;
-    pub fn z_index_or(&self, key: &str, fb: i32) -> i32;
-
-    // Declarative (nothing in StyledExt consumes these yet)
-    pub fn shadow(&self, key: &str) -> Option<&str>;
-    pub fn motion_duration(&self, key: &str) -> Option<u32>;
-    pub fn motion_easing(&self, key: &str) -> Option<&str>;
-
-    // Component tokens
-    pub fn component(&self, path: &str) -> Option<&serde_json::Value>;
-    pub fn component_color(&self, path: &str) -> Option<Color>;
-    pub fn component_fill(&self, path: &str) -> Option<Fill>;
-    pub fn component_radius(&self, path: &str) -> Option<f32>;
-
-    pub fn state_color(&self, path: &str, state: ComponentState, field: &str) -> Option<Color>;
-    pub fn state_fill(&self, path: &str, state: ComponentState, field: &str) -> Option<Fill>;
-    pub fn state_radius(&self, path: &str, state: ComponentState, field: &str) -> Option<f32>;
-
-    // Validation (returns warnings, never fails)
-    pub fn validate(&self) -> Vec<String>;
-
-    // Plus the named getters listed under "Semantic tokens"
-}
-```
-
-`Theme` derives `Clone`, `Debug`, and `PartialEq`. `Appearance` is
-`Light` / `Dark`, serialized as lowercase strings.
-
-### `ThemeRegistry`
-
-```rust
-impl ThemeRegistry {
-    pub fn new() -> Self;
-
-    // Panicking load / reload (the ones you'll normally call from app init).
-    pub fn load(&self, json: &str) -> Arc<Theme>;
-    pub fn load_dir(&self, dir: &Path) -> usize;
-    pub fn reload_dir(&self, dir: &Path) -> usize;
-
-    // `Result` versions — use these if you want to surface errors.
-    pub fn try_load(&self, json: &str) -> Result<Arc<Theme>, ThemeError>;
-    pub fn try_load_dir(&self, dir: &Path) -> Result<usize, ThemeError>;
-    pub fn try_reload_dir(&self, dir: &Path) -> Result<usize, ThemeError>;
-
-    // Retrieval
-    pub fn get(&self, id: &str) -> Option<Arc<Theme>>;
-    pub fn active(&self) -> Option<Arc<Theme>>;
-    pub fn set_active(&self, id: &str) -> Result<(), ThemeError>;
-    pub fn remove(&self, id: &str) -> Option<Arc<Theme>>;
-    pub fn list(&self) -> Vec<Arc<Theme>>;
-    pub fn ids(&self) -> Vec<String>;
-
-    // Discovery / cheap metadata
-    pub fn len(&self) -> usize;
-    pub fn is_empty(&self) -> bool;
-    pub fn contains(&self, id: &str) -> bool;
-    pub fn active_id(&self) -> Option<String>;
-    pub fn theme_info(&self, id: &str) -> Option<ThemeInfo>;
-    pub fn info_list(&self) -> Vec<ThemeInfo>;   // sorted by name, then id
-    pub fn active_info(&self) -> Option<ThemeInfo>;
-
-    // Static constructors
-    pub fn from_json(json: &str) -> Theme;
-    pub fn try_from_json(json: &str) -> Result<Theme, ThemeError>;
-    pub fn from_dir(dir: &Path) -> Self;
-    pub fn try_from_dir(dir: &Path) -> Result<Self, ThemeError>;
-
-    pub fn insert(&self, theme: Theme) -> Arc<Theme>;
-}
-```
-
-### `ThemeHandle`
-
-```rust
-pub struct ThemeHandle {
-    pub registry: Arc<ThemeRegistry>,
-    pub active: State<Arc<Theme>>,
-}
-
-impl ThemeHandle {
-    pub fn set_active(&self, id: &str) -> Result<(), ThemeError>;
-    pub fn reload_dir(&self, dir: &Path) -> usize;
-
-    // Reactive (subscribes — re-renders on theme switch)
-    pub fn current(&self) -> Arc<Theme>;
-    pub fn active_id(&self) -> String;
-    pub fn active_info(&self) -> ThemeInfo;
-    pub fn is_active(&self, id: &str) -> bool;
-
-    // Non-subscribing enumeration
-    pub fn themes(&self) -> Vec<Arc<Theme>>;
-    pub fn theme_infos(&self) -> Vec<ThemeInfo>;
-    pub fn theme_ids(&self) -> Vec<String>;
-    pub fn theme_info(&self, id: &str) -> Option<ThemeInfo>;
-    pub fn contains(&self, id: &str) -> bool;
-    pub fn theme_count(&self) -> usize;
-    pub fn is_empty(&self) -> bool;
-}
-```
-
-### `ThemeError`
-
-```rust
-pub enum ThemeError {
-    Json(serde_json::Error),
-    Io(std::io::Error),
-    InvalidHex(String),
-    InvalidPaletteRef(String),
-    UnknownPaletteStep(String),
-    UnknownTheme(String),
-    NotASolidColor(String),
-    TokenAt { path: String, reason: Box<ThemeError> },
-    Cycle(Vec<String>),
-}
-```
-
-### Low-level resolution
-
-`resolve_color` and `resolve_fill` are exposed for tooling and tests that need
-to resolve token strings without building a full `Theme`:
-
-```rust
-pub fn resolve_color(
-    s: &str,
-    overrides: &HashMap<String, Color>,
-    semantic: &HashMap<String, Fill>,
-) -> Result<Color, ThemeError>;
-
-pub fn resolve_fill(
-    token: &TokenValue,
-    overrides: &HashMap<String, Color>,
-    semantic: &HashMap<String, Fill>,
-) -> Result<Fill, ThemeError>;
-```
-
----
-
-# Installation
-
-### Latest published version
-
-```toml
-[dependencies]
-freyacn = "0.2.2"
-```
-
-> The crates.io release may lag behind `git`. Because the API is pre-release,
-> pin to a specific commit for anything you intend to keep working.
-
-### From GitHub main branch
-
-```toml
-[dependencies]
-freyacn = { git = "https://github.com/brightmadueke/freyacn" }
-```
-
-### From a GitHub tag
-
-```toml
-[dependencies]
-freyacn = { git = "https://github.com/brightmadueke/freyacn", tag = "v0.3.0" }
-```
-
-### From a specific commit (recommended for reproducibility)
-
-```toml
-[dependencies]
-freyacn = { git = "https://github.com/brightmadueke/freyacn", rev = "<commit-sha>" }
-```
-
-### From the experimental branch
-
-```toml
-[dependencies]
-freyacn = { git = "https://github.com/brightmadueke/freyacn", branch = "experimental" }
-```
-
-> **NOTE:** the `experimental` branch is not stable — it contains code that has
-> not been released.
-
----
+Accepts anything that implements `CnArg`: string literals, `Option<&str>`, `bool`, `&str`, `String`.
+
+## How the layers fit
+
+Everything flows through one `Style` type and one rule:
+
+**`Style::default()` is the theme layer. `Style::bare()` is the patch layer.**
+
+- `Style::default()` seeds `background` and `text_color` from the active theme.
+- `Style::bare()` starts empty.
+- `merge_style` copies a scalar field (colour, padding, border, …) only if it differs from `bare()`, so patches stay
+  sparse.
+- `merge_style` **accumulates** variants — every layer in the fold contributes its own `hover:` / `focus-visible:` /
+  `has-[svg]:` / `aria-invalid:` registrations, and later layers override earlier ones only when they register the
+  *same* condition.
+- `#[variant]` and `.style("…")` fold onto `Style::bare()`.
+- `#[component]`'s fold starts from `Style::default()` and merges variant, size, and `self.style` on top.
+
+Starting the overlay layers from `bare()` is what lets a variant that only sets `text_color` merge cleanly over a theme
+default that also sets `text_color` — the variant wins, because it's a non-bare patch and the theme default is a bare
+field.
+
+**Variant accumulation is what makes multi-layer components work.** A shadcn `Button` registers variants in three
+places:
+
+- The base class string: `focus-visible:ring-[3px]`, `disabled:opacity-50`, `aria-invalid:border-destructive`,
+  `dark:aria-invalid:ring-destructive/40`.
+- `ButtonVariant::Default`: `hover:bg-primary/90`.
+- `ButtonSize::Default`: `has-[svg]:px-3`.
+
+Before the fix, each successive `merge_style` **replaced** the variant list, so only the last non-empty pass survived —
+the `ButtonSize` `HasSvg` patch wiped out `Hover`, `FocusVisible`, `Disabled`, `AriaInvalid`, and the `Dark` compound.
+`Div::build_element` then saw `variants.has(Hover) == false`, skipped wiring pointer handlers, and hover never fired.
+With `StyleVariants::extend`, all four layers contribute, `has(Hover)` is `true`, pointer handlers are wired, and every
+variant fires as expected.
+
+## Notes
+
+- `ring-*` utilities map onto Freya's `Border`; there is no separate ring model. You cannot have both a visible border
+  and a separate ring on the same element — wrap in a `div` if you need both, or use a spread shadow
+  (`Shadow::new().spread(3.0)`) for a true offset ring.
+- `radial` and `conic` gradients accept `center` and `radius` fields for forward compatibility, but Freya's gradient
+  types currently ignore them.
+- The `shadows` JSON block holds CSS shadow strings and is **declarative** — nothing in `StyledExt` reads it. Apply box
+  shadows and text shadows with `.shadow_*()` / `.text_shadow_*()`, which use the Tailwind v4.1 presets directly.
+- `motion` tokens are parsed and exposed through `theme.motion_duration(..)` and `theme.motion_easing(..)`, but nothing
+  in `StyledExt` consumes them yet.
+- `get_theme_or_default()` is the non-panicking form of `use_theme()`: it falls back to a cached `Theme::empty_light()`
+  when no provider is in scope.
+- `has:` variants have documented limitations — one-frame delay on mount, no unmount cleanup, immediate-children-only
+  for grandparents. Use `.with_has_*()` for conditional children or anywhere the delay is visible. See the`styling::has`
+  module docs for details. If `has-*:` classes aren't firing at all, check that the element's style registered the
+  variant (via `.style("has-[svg]:…")` or `.has_svg(…)`) — this is now independent of whether other layers also
+  registered variants, but you still need at least one `has-*:` class on the element for the mechanism to engage.
+- `all` and `full` are currently identical. If you intend them to diverge (e.g. `full` = `all` + heavyweight
+  integrations), change the Cargo.toml first — the README table will track it.
 
 ## License
 
 MIT.
 
----
-
 ## Acknowledgements
 
-- [Freya](https://github.com/marc2332/freya) — for the GUI framework.
-- [Tailwind CSS](https://tailwindcss.com) — for the utility-first philosophy.
-- [gpui-kit](https://github.com/zed-industries/zed) — for the theme-token
-  model (`semantic` → `components` → `state` with fallback).
-
-```
+- [Freya](https://github.com/marc2332/freya) — GUI framework.
+- [Tailwind CSS](https://tailwindcss.com) — utility-first approach.
+- [gpui-kit](https://github.com/zed-industries/zed) — theme-token model (`semantic` → `components` → `state` with
+  fallback).

@@ -1,5 +1,6 @@
 use super::div::{Div, div};
 use crate::styling::colors::{blue_600, gray_300, transparent};
+use crate::styling::has::{HasKind, use_has_signal_when};
 use crate::styling::semantic_events::{HasSemanticEvents, SemanticEvents};
 use crate::styling::{Style, StyledColor, StyledExt};
 use freya::prelude::*;
@@ -20,96 +21,39 @@ const RING_WIDTH: f32 = 2.0;
 /// ## Behavior
 ///
 /// * Controlled: reads `.with_checked(bool)`, fires `.on_checked(...)`
-///   when activated while unchecked. **Unlike a checkbox, activating a
-///   checked radio is a no-op** — HTML radios cannot be unchecked by
-///   clicking, and neither can this one. There is no `.on_unchecked`.
-/// * Focusable when enabled; not focusable when disabled.
-/// * Disabled radios show `CursorIcon::NotAllowed` and suppress
-///   activation callbacks.
-///
-/// ## Example
-///
-/// ```
-/// let selected = use_state(|| "a");
-/// radio()
-///     .with_checked(*selected.read() == "a")
-///     .on_checked(move |_| selected.set("a"))
-/// ```
+///   when activated while unchecked. **Activating an already-checked
+///   radio is a no-op** — HTML semantics.
+/// * Focusable when enabled; disabled radios suppress pointer callbacks.
 ///
 /// ## Grouping
 ///
-/// HTML radios with the same `name` form a group where selecting one
-/// deselects the others. **This is not implemented** — the caller owns
-/// the single-selection logic via `use_state`.
-///
-/// ```
-/// let selected = use_state(|| "small");
-///
-/// div()
-///     .direction(Direction::Vertical)
-///     .child(
-///         radio()
-///             .with_checked(*selected.read() == "small")
-///             .on_checked(move |_| selected.set("small"))
-///     )
-///     .child(
-///         radio()
-///             .with_checked(*selected.read() == "medium")
-///             .on_checked(move |_| selected.set("medium"))
-///     )
-/// ```
+/// Single-selection across radios is not implemented — caller owns the
+/// state via `use_state`.
 ///
 /// ## Accessibility
 ///
-/// Role is `RadioButton`. Selected state is exposed through the node's
-/// `description` (`"selected"` / `"not selected"`) as a workaround for
-/// the missing `accesskit::Toggled`. The description supplements a
-/// label set via `.a11y_alt(..)` rather than replacing it.
+/// Role is `RadioButton`. Selected state is exposed via `description`
+/// (`"selected"` / `"not selected"`).
 ///
 /// ## Aria state
 ///
-/// `with_checked` and `with_disabled` mirror their native flags into the
-/// component's `AriaState`, so `aria-checked:*` and `aria-disabled:*`
-/// class strings fire alongside their native counterparts:
-///
-/// ```
-/// radio()
-///     .with_checked(true)
-///     .style("checked:bg-blue-600 aria-checked:bg-blue-600")
-/// ```
-///
-/// Additional aria states with no native equivalent are set through the
-/// [`HasSemanticEvents`] builders:
-///
-/// ```
-/// radio()
-///     .with_aria_invalid(true)
-///     .style("aria-invalid:ring-2 aria-invalid:ring-red-500")
-/// ```
-///
-/// A direct `.with_aria_disabled(true)` also disables the radio for
-/// pointer-handler and focus purposes — the render body unions the aria
-/// flags into `effectively_disabled`.
-///
-/// ## Custom colors
-///
-/// `.checked(..)` recolors the **ring**; `.dot_color(..)` colors the
-/// **dot**. Pair them for a consistent radio:
-///
-/// ```
-/// radio()
-///     .with_checked(true)
-///     .checked(|s| s.background(green_600().into()))
-///     .dot_color(green_600())
-/// ```
+/// `with_checked` / `with_disabled` mirror their native flags.
 ///
 /// ## Composition
 ///
-/// Built on top of `div()`. `div` owns style inheritance, pointer and
-/// focus tracking, a11y id, and variant resolution (including
-/// `:checked` via `.with_checked(..)` and `aria-checked:` via the
-/// forwarded aria state). `Radio` carries UA defaults, forwards semantic
-/// events, and adds the ring / hole / dot children.
+/// Built on top of `div()`.
+///
+/// ## Shadows
+///
+/// Box shadows render on the outer rect (the ring circle) via `Div`.
+/// Text shadows don't paint (no glyph content on any of the inner
+/// `Div`s).
+///
+/// ## Has: signaling
+///
+/// Signals [`HasKind::Checked`] when checked and
+/// [`HasKind::Disabled`] when disabled. Subject to the one-frame delay
+/// and persistence caveats of [`crate::styling::has`].
 #[derive(PartialEq, Clone)]
 pub struct Radio {
     style: Style,
@@ -127,7 +71,6 @@ pub struct Radio {
     on_checked: Option<EventHandler<Event<PressEventData>>>,
 }
 
-/// Shorthand constructor: `radio().with_checked(true)`
 pub fn radio() -> Radio {
     Radio::new()
 }
@@ -151,59 +94,28 @@ impl Radio {
         }
     }
 
-    // ── state ──────────────────────────────────────────────────────
-
-    /// Controlled checked state.
-    ///
-    /// Sets the native `checked` flag **and** the `aria-checked` state,
-    /// so both `checked:*` and `aria-checked:*` class strings fire from
-    /// a single call:
-    ///
-    /// ```
-    /// radio()
-    ///     .with_checked(true)
-    ///     .style("checked:bg-blue-600 aria-checked:bg-blue-600")
-    /// ```
-    ///
-    /// Named `with_checked` so `StyledExt::checked(..)` remains callable
-    /// for styling the `:checked` variant.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self.semantic_events.aria_state.checked = v;
         self
     }
 
-    /// HTML `disabled`.
-    ///
-    /// Sets the native `disabled` flag **and** the `aria-disabled` state.
-    /// Both `disabled:*` and `aria-disabled:*` class strings fire, the
-    /// pointer handlers are suppressed, and the radio is removed from
-    /// the focus order.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self.semantic_events.aria_state.disabled = v;
         self
     }
 
-    /// Radio diameter in pixels. Defaults to `16.0`.
     pub fn size(mut self, v: f32) -> Self {
         self.size = v;
         self
     }
 
-    /// Color of the inner dot when checked. Ignored when unchecked.
-    /// Defaults to `blue_600()` from the FreyaCN palette — pair with
-    /// `.checked(|s| s.background(same_color))` to keep the ring and
-    /// dot consistent.
     pub fn dot_color(mut self, color: impl Into<StyledColor>) -> Self {
         self.dot_color = Some(color.into());
         self
     }
 
-    // ── activation semantics ───────────────────────────────────────
-
-    /// Fires when the radio is activated while unchecked. Clicking an
-    /// already-checked radio is a no-op (HTML semantics).
     pub fn on_checked(mut self, cb: impl Into<EventHandler<Event<PressEventData>>>) -> Self {
         self.on_checked = Some(cb.into());
         self
@@ -246,7 +158,6 @@ impl HasSemanticEvents for Radio {
     }
 }
 
-/// HTML `<input type="radio">` user-agent defaults.
 fn radio_ua_style(size: f32, effectively_disabled: bool) -> Style {
     let mut style = Style::bare();
     style.width = Size::px(size);
@@ -276,16 +187,13 @@ fn radio_ua_style(size: f32, effectively_disabled: bool) -> Style {
 
 impl Component for Radio {
     fn render(&self) -> impl IntoElement {
-        // Native `disabled` and `aria-disabled` are treated uniformly:
-        // either one disables the radio for pointer-handler purposes,
-        // focusability, cursor, and (via `StyleVariant::Disabled` /
-        // `StyleVariant::AriaDisabled`) the corresponding class strings.
-        // `with_disabled` syncs the pair, but a caller using
-        // `.with_aria_disabled(true)` directly bypasses that sync, so
-        // this union keeps behaviour consistent.
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
 
-        // ── 1. Base div ────────────────────────────────────────────
+        // Signal checked / disabled state to any ancestor with `has-*:`
+        // styles.
+        use_has_signal_when(HasKind::Checked, self.checked);
+        use_has_signal_when(HasKind::Disabled, effectively_disabled);
+
         let mut div_el: Div = div()
             .with_checked(self.checked)
             .with_disabled(effectively_disabled);
@@ -298,7 +206,6 @@ impl Component for Radio {
 
         div_el = div_el.a11y_role(AccessibilityRole::RadioButton);
 
-        // Same a11y workaround as checkbox: description encodes state.
         let was_checked = self.checked;
         div_el = div_el.a11y_builder(move |node| {
             node.set_description(if was_checked {
@@ -308,22 +215,12 @@ impl Component for Radio {
             });
         });
 
-        // Forward the full semantic-events bundle — including the aria
-        // state — so `Div::build_element` pushes `StyleVariant::Aria*`
-        // entries into `live` and fires `aria-checked:*`,
-        // `aria-disabled:*`, `aria-invalid:*`, etc.
         div_el = div_el.with_semantic_events(self.semantic_events.clone());
 
-        // ── 2. Activation ──────────────────────────────────────────
-        // Gated on the combined disabled state so an aria-disabled-only
-        // radio behaves like a natively disabled one — no activation
-        // callbacks fire.
         if !effectively_disabled && self.on_checked.is_some() {
             let on_checked = self.on_checked.clone();
             let was_checked = self.checked;
             div_el = div_el.on_all_press(move |e: Event<PressEventData>| {
-                // HTML semantics: activating an already-checked radio is
-                // a no-op.
                 if !was_checked {
                     if let Some(cb) = &on_checked {
                         cb.call(e);
@@ -332,7 +229,6 @@ impl Component for Radio {
             });
         }
 
-        // ── 3. Inner "hole" — transparent, so the parent bg shows ──
         let inner_size = (self.size - 2.0 * RING_WIDTH).max(0.0);
         let mut inner_style = Style::bare();
         inner_style.width = Size::px(inner_size);
@@ -345,7 +241,6 @@ impl Component for Radio {
         let mut inner = div();
         *inner.get_style() = inner_style;
 
-        // ── 4. Dot (only when checked) ─────────────────────────────
         if self.checked {
             let dot_size = self.size * 0.55;
             let dot_color = self.dot_color.clone().unwrap_or_else(|| blue_600());

@@ -1,8 +1,9 @@
-use super::div::{Div, div};
-use crate::styling::apply::apply_text_style;
-use crate::styling::colors::gray_400;
+use crate::styling::apply::{apply_text_style, apply_to_rect};
+use crate::styling::colors::{black, gray_400};
+use crate::styling::has::{HasKind, use_has_signal_when};
 use crate::styling::semantic_events::{HasSemanticEvents, SemanticEvents};
-use crate::styling::{InheritedStyle, Style, StyledColor, StyledExt, black, white};
+use crate::styling::style_variants::StyleVariant;
+use crate::styling::{InheritedStyle, Style, StyledColor, StyledExt};
 use freya::components::{ScrollConfig, ScrollController, ScrollView, use_scroll_controller};
 use freya::prelude::*;
 use freya_core::diff_key::DiffKey;
@@ -11,7 +12,7 @@ use freya_core::integration::{
     AccessibilityData, AccessibilityExt, ChildrenExt, ComponentKey, EventHandlersExt, KeyExt,
 };
 use freya_core::prelude::{
-    Component, EventHandlers, try_consume_context, use_side_effect, use_state,
+    Component, EventHandlers, try_consume_context, use_a11y, use_focus, use_side_effect, use_state,
 };
 use std::borrow::Cow;
 use torin::gaps::Gaps;
@@ -20,7 +21,30 @@ use torin::size::Size;
 
 const DEFAULT_WIDTH: f32 = 200.0;
 
-/// How the input renders its value.
+/// What kind of value the input represents.
+///
+/// Mirrors the HTML `<input type="...">` attribute. Drives:
+///
+/// - **Character filtering** — `Tel` and `Number` restrict the accepted
+///   characters on both typing and paste. `Text`, `Email`, `Url`,
+///   `Search`, and `Password` accept everything.
+/// - **A11y role** — `Password(_)` uses `PasswordInput`; everything else
+///   uses `TextInput`. Accesskit has no dedicated `Email` / `Tel` /
+///   `Number` / `Search` roles, so the only differentiation is password
+///   masking.
+/// - **Display masking** — `Password(ch)` renders every character as
+///   `ch`.
+///
+/// `Email`, `Tel`, `Url`, and `Search` are semantically distinct but
+/// behave identically to `Text` in this implementation. They exist so
+/// `style_variant(...)` calls can branch on the type, and so future
+/// enhancements (URL validation, email keyboard hints on mobile, search
+/// clear buttons) have a place to live.
+///
+/// **Validation is not enforced by type.** Use `min_length`,
+/// `max_length`, `required`, and `is_valid()` to build validation
+/// semantics — matching HTML, where `<input type="email">` will happily
+/// accept `"notanemail"` until the form is submitted.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
     /// HTML `type="text"` — plain text.
@@ -28,11 +52,85 @@ pub enum InputMode {
     Text,
     /// HTML `type="password"` — mask each char with the given character.
     Password(char),
+    /// HTML `type="email"` — plain text, no character filtering.
+    Email,
+    /// HTML `type="tel"` — filters to digits and phone symbols
+    /// (`+`, `-`, space, `(`, `)`, `.`, `*`, `#`).
+    Tel,
+    /// HTML `type="url"` — plain text, no character filtering.
+    Url,
+    /// HTML `type="number"` — filters to digits, `+`, `-`, `.`, `e`, `E`.
+    /// Does not validate numeric grammar (multiple dots are accepted,
+    /// matching browser behaviour — validation is the caller's job).
+    Number,
+    /// HTML `type="search"` — plain text, no character filtering.
+    /// Kept distinct from `Text` so callers can branch on it; the
+    /// native clear-button behaviour is not implemented.
+    Search,
 }
 
 impl InputMode {
     pub fn password() -> Self {
         Self::Password('•')
+    }
+
+    /// `true` when the mode masks the value for display and a11y.
+    pub fn is_masked(self) -> bool {
+        matches!(self, InputMode::Password(_))
+    }
+
+    /// The character used for masking, if any.
+    pub fn mask_char(self) -> Option<char> {
+        match self {
+            InputMode::Password(ch) => Some(ch),
+            _ => None,
+        }
+    }
+
+    /// Whether `ch` is allowed to appear in this input.
+    ///
+    /// Only `Tel` and `Number` filter; the rest accept all characters.
+    /// Whitespace-only characters are filtered out separately (see
+    /// `on_key_down`) — this predicate is purely type-driven.
+    pub fn allows_char(self, ch: char) -> bool {
+        match self {
+            InputMode::Text
+            | InputMode::Email
+            | InputMode::Url
+            | InputMode::Search
+            | InputMode::Password(_) => true,
+            InputMode::Tel => ch.is_ascii_digit() || "+- ()*#.".contains(ch),
+            InputMode::Number => ch.is_ascii_digit() || "+-eE.".contains(ch),
+        }
+    }
+}
+
+/// A validation failure from [`Input::validate`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationError {
+    /// The value is empty and `required(true)` was set.
+    Required,
+    /// The value has fewer characters than `min_length`.
+    TooShort { min: usize, actual: usize },
+    /// The value has more characters than `max_length`.
+    ///
+    /// In practice this can only happen via programmatic `.value(..)`
+    /// that already exceeds the limit — normal typing and paste are
+    /// blocked by the key handler.
+    TooLong { max: usize, actual: usize },
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::Required => write!(f, "value is required"),
+            ValidationError::TooShort { min, actual } => {
+                write!(f, "value is too short ({actual} chars, minimum {min})")
+            }
+            ValidationError::TooLong { max, actual } => {
+                write!(f, "value is too long ({actual} chars, maximum {max})")
+            }
+        }
     }
 }
 
@@ -40,71 +138,45 @@ impl InputMode {
 ///
 /// ## Behavior
 ///
-/// * **Controlled** — reads `.value(String)`, fires `.on_change(handler)`
-///   when the value changes. The parent updates the prop in response.
-/// * **Focusable** on mount (unless disabled), on Tab, and by clicking.
-/// * **Selection** — click-drag to select, shift+arrow to extend, Ctrl+A
-///   to select all. Password mode opts out because the mask length may
-///   differ from the value length in UTF-16.
-/// * **Horizontal scrolling** — long values scroll so the cursor is
-///   always visible.
-/// * **Clipboard** — Ctrl+C copies the selection (or whole value), Ctrl+X
-///   cuts, Ctrl+V pastes at the cursor. Respects `.max_length(n)`.
-/// * **IME** — preedit composes inline with an underline, honoring mask.
-/// * Enter fires `.on_submit(handler)`.
+/// * **Controlled** — reads `.value(String)`, fires `.on_change(..)`.
+/// * **Focusable**, selectable, clipboard-aware, IME-aware.
+/// * Enter fires `.on_submit(..)`.
+/// * `read_only(true)` — focusable, selectable, copyable; typing,
+///   Backspace, Delete, Ctrl+X, Ctrl+V do nothing.
+/// * `max_length(n)` — rejects character insertion (and clips pasted
+///   text) once the resulting length would exceed `n`.
+/// * `min_length(n)` — **validation only** (matches HTML `<input minlength>`
+///   semantics). Does not block backspace or paste. Use `.validate()` /
+///   `.is_valid()` to check.
+/// * `required(true)` — **validation only**. Same semantics.
 ///
-/// ## Example
+/// ## Types
 ///
-/// ```
-/// let value = use_state(String::new);
-/// input(value.read().clone())
-///     .placeholder("Type here")
-///     .on_change(move |text| value.set(text))
-/// ```
+/// See [`InputMode`]. `Tel` and `Number` filter characters on typing
+/// and paste. `Password` masks the display. The rest accept everything.
 ///
-/// ## Accessibility
+/// ## Validation
 ///
-/// Role is `TextInput`, or `PasswordInput` when `.mode(m)` is a
-/// `Password`. The a11y value is either the real text (text mode) or a
-/// fixed-length mask (password mode) — the raw password never flows
-/// through `a11y_alt`.
+/// ```rust,ignore
+/// let v = use_state(String::new);
+/// let text = (*v.read()).clone();
 ///
-/// ## Aria state
-///
-/// `with_disabled` and `with_read_only` mirror their native flags into
-/// the component's `AriaState`, so `aria-disabled:*` and
-/// `aria-readonly:*` class strings fire alongside their native
-/// counterparts from a single setter:
-///
-/// ```
-/// input(value)
-///     .with_disabled(true)
-///     .style("disabled:opacity-50 aria-disabled:cursor-not-allowed")
+/// let el = input(text.clone())
+///     .required(true)
+///     .min_length(3)
+///     .max_length(64)
+///     .with_aria_invalid(!input(text.clone()).required(true).min_length(3).max_length(64).is_valid())
+///     .on_change(move |t| v.set(t));
 /// ```
 ///
-/// Additional aria states with no native equivalent are set through the
-/// [`HasSemanticEvents`] builders:
+/// `validate()` returns `Option<ValidationError>` with a specific
+/// reason; `is_valid()` is the boolean form.
 ///
-/// ```
-/// input(value)
-///     .with_aria_invalid(true)
-///     .with_aria_required(true)
-///     .style("
-///         aria-invalid:border-red-500
-///         aria-required:border-amber-500
-///     ")
-/// ```
+/// ## Caret
 ///
-/// Calling `.with_aria_disabled(true)` / `.with_aria_readonly(true)`
-/// directly also disables the input's editing logic — the render body
-/// unions the aria flags into `effectively_disabled` / `effective_read_only`.
-///
-/// ## Known limitations
-///
-/// * `e.modifiers.ctrl()` / `.shift()` — if `Modifiers` exposes these as
-///   public fields instead of methods, swap the calls. One-character fix.
-/// * Password mode disables selection because mask ↔ value misalignment
-///   on emoji would land highlights at the wrong offsets.
+/// A text-insertion caret is rendered at the current cursor position
+/// whenever the input is focused and enabled. It shows even on empty
+/// inputs with placeholders. It's a static bar, not blinking.
 #[derive(PartialEq, Clone)]
 pub struct Input {
     style: Style,
@@ -116,6 +188,8 @@ pub struct Input {
     placeholder: Option<Cow<'static, str>>,
     mode: InputMode,
     max_length: Option<usize>,
+    min_length: Option<usize>,
+    required: bool,
     auto_focus: bool,
     disabled: bool,
     read_only: bool,
@@ -126,7 +200,6 @@ pub struct Input {
     semantic_events: SemanticEvents,
 }
 
-/// Shorthand constructor: `input("initial text")`
 pub fn input(value: impl Into<String>) -> Input {
     Input::new(value)
 }
@@ -143,6 +216,8 @@ impl Input {
             placeholder: None,
             mode: InputMode::default(),
             max_length: None,
+            min_length: None,
+            required: false,
             auto_focus: false,
             disabled: false,
             read_only: false,
@@ -154,68 +229,88 @@ impl Input {
         }
     }
 
-    // ── state ──────────────────────────────────────────────────────
-
     pub fn value(mut self, v: impl Into<String>) -> Self {
         self.value = v.into();
         self
     }
-
     pub fn placeholder(mut self, p: impl Into<Cow<'static, str>>) -> Self {
         self.placeholder = Some(p.into());
         self
     }
-
     pub fn mode(mut self, m: impl Into<InputMode>) -> Self {
         self.mode = m.into();
         self
     }
-
+    /// HTML `maxlength` — the input refuses to accept more than `n`
+    /// characters. Character count is Unicode scalar values.
     pub fn max_length(mut self, n: impl Into<Option<usize>>) -> Self {
         self.max_length = n.into();
         self
     }
-
+    /// HTML `minlength` — validation only. Does **not** prevent the user
+    /// from deleting below `n`. Matches browser behaviour; call
+    /// `.is_valid()` to check.
+    pub fn min_length(mut self, n: impl Into<Option<usize>>) -> Self {
+        self.min_length = n.into();
+        self
+    }
+    /// HTML `required` — validation only. Fails when `.value("")`.
+    pub fn required(mut self, v: bool) -> Self {
+        self.required = v;
+        self
+    }
     pub fn auto_focus(mut self, v: bool) -> Self {
         self.auto_focus = v;
         self
     }
-
-    /// Disable the input.
-    ///
-    /// Sets the native `disabled` flag **and** the `aria-disabled` state.
-    /// Both `disabled:*` and `aria-disabled:*` class strings fire, and
-    /// the input is removed from the focus order and stops accepting
-    /// keyboard input.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self.semantic_events.aria_state.disabled = v;
         self
     }
-
-    /// Make the input read-only.
-    ///
-    /// Sets the native `read_only` flag **and** the `aria-readonly` state.
-    /// Both `readonly:*` (via `Style::read_only` — not used here, so the
-    /// native read-only gate suppresses editing directly) and
-    /// `aria-readonly:*` class strings fire, and the keyboard handler
-    /// short-circuits.
     pub fn with_read_only(mut self, v: bool) -> Self {
         self.read_only = v;
         self.semantic_events.aria_state.readonly = v;
         self
     }
-
-    // ── events ─────────────────────────────────────────────────────
-
     pub fn on_change(mut self, cb: impl Into<EventHandler<String>>) -> Self {
         self.on_change = Some(cb.into());
         self
     }
-
     pub fn on_submit(mut self, cb: impl Into<EventHandler<String>>) -> Self {
         self.on_submit = Some(cb.into());
         self
+    }
+
+    /// Check the current `.value(..)` against `required`, `min_length`,
+    /// and `max_length`. Returns `None` when valid, `Some(reason)`
+    /// otherwise.
+    ///
+    /// Reads the snapshot of `.value(..)` at construction time — the
+    /// input itself is controlled, so call this on a fresh
+    /// `input(new_value)` in the parent's render to get current
+    /// validation state.
+    pub fn validate(&self) -> Option<ValidationError> {
+        let len = self.value.chars().count();
+        if self.required && len == 0 {
+            return Some(ValidationError::Required);
+        }
+        if let Some(min) = self.min_length {
+            if len < min {
+                return Some(ValidationError::TooShort { min, actual: len });
+            }
+        }
+        if let Some(max) = self.max_length {
+            if len > max {
+                return Some(ValidationError::TooLong { max, actual: len });
+            }
+        }
+        None
+    }
+
+    /// Boolean form of [`validate`](Self::validate).
+    pub fn is_valid(&self) -> bool {
+        self.validate().is_none()
     }
 }
 
@@ -251,12 +346,10 @@ impl HasSemanticEvents for Input {
     }
 }
 
-/// HTML `<input type="text">` UA defaults. No phantom `:focus` — focus
-/// comes from `Div::with_focusable`.
 fn input_ua_style(effectively_disabled: bool) -> Style {
     let mut style = Style::bare();
     style.width = Size::px(DEFAULT_WIDTH);
-    style.background = white().into();
+    style.background = Fill::default();
     style.padding = Gaps::new(6.0, 8.0, 6.0, 8.0);
     style.radius = CornerRadius::new_all(4.0);
     style.overflow = Overflow::Clip;
@@ -265,14 +358,12 @@ fn input_ua_style(effectively_disabled: bool) -> Style {
     } else {
         CursorIcon::Text
     };
-    style = style.disabled(|mut s| {
-        s.opacity = 0.5;
-        s
-    });
+    style.direction = Direction::Horizontal;
+    style.main_align = Alignment::Start;
+    style.cross_align = Alignment::center();
     style
 }
 
-/// Convert a UTF-16 index (paragraph's cursor space) to a byte offset.
 fn utf16_to_byte(text: &str, utf16_index: usize) -> usize {
     let mut utf16_count = 0;
     for (byte_idx, ch) in text.char_indices() {
@@ -284,14 +375,17 @@ fn utf16_to_byte(text: &str, utf16_index: usize) -> usize {
     text.len()
 }
 
-/// If the cursor is outside the visible viewport, scroll so it comes
-/// back into view. Ported from the reference `Input::follow_cursor`
-/// implementation.
-///
-/// `ScrollController` is `Copy` and stores its position in internal
-/// `State`, so `scroll_to_x` on a copy mutates the shared state —
-/// `follow_cursor` can take it by value and be called from an `Fn`
-/// closure.
+fn selection_char_count(text: &str, sel: Option<(usize, usize)>) -> usize {
+    match sel {
+        Some((start, end)) => {
+            let sb = utf16_to_byte(text, start);
+            let eb = utf16_to_byte(text, end);
+            text[sb..eb].chars().count()
+        }
+        None => 0,
+    }
+}
+
 fn follow_cursor(
     holder: State<ParagraphHolder>,
     text: &str,
@@ -306,22 +400,17 @@ fn follow_cursor(
     if viewport_area.width() == 0.0 {
         return;
     }
-
-    let holder_ref = holder.peek();
-    let holder_borrow = holder_ref.0.borrow();
+    let peeked = holder.peek();
+    let holder_borrow = (*peeked).0.borrow();
     let Some(inner) = holder_borrow.as_ref() else {
         return;
     };
-
     let cursor_rect = inner.paragraph.cursor_rect(text, cursor_index, text_align);
     let scale = inner.scale_factor as f32;
     let cursor_x = cursor_rect.left / scale;
     let visible_cursor_x = cursor_x + padding.left();
-
-    // All f32 — `Area` fields and skia rect fields are both f32.
     let visible_start_x = viewport_area.min_x() - para_area.read().min_x();
     let visible_end_x = visible_start_x + viewport_area.width();
-
     if visible_cursor_x < visible_start_x {
         scroll.scroll_to_x(-cursor_x as i32);
     } else if visible_cursor_x > visible_end_x {
@@ -329,28 +418,40 @@ fn follow_cursor(
     }
 }
 
+/// Filter a pasted string to the characters allowed by `mode`.
+///
+/// Control characters (newlines, tab) are always stripped — inputs are
+/// single-line.
+fn filter_paste(pasted: &str, mode: InputMode) -> String {
+    pasted
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .filter(|ch| mode.allows_char(*ch))
+        .collect()
+}
+
 impl Component for Input {
     fn render(&self) -> impl IntoElement {
+        let a11y_id = use_a11y();
+        let focus = use_focus(a11y_id);
+
         let mut cursor = use_state(|| self.value.encode_utf16().count());
         let mut anchor = use_state(|| None::<usize>);
         let mut is_dragging = use_state(|| false);
+        let mut pressing = use_state(|| false);
+        let mut hovering = use_state(|| false);
         let holder = use_state(ParagraphHolder::default);
         let mut preedit = use_state(|| None::<String>);
         let scroll_controller = use_scroll_controller(ScrollConfig::default);
-        let para_area = use_state(Area::default);
-        let viewport_area = use_state(Area::default);
+        let mut para_area = use_state(Area::default);
+        let mut viewport_area = use_state(Area::default);
 
-        // Native `disabled` / `read_only` and their aria counterparts are
-        // treated uniformly: any of them being set engages the
-        // corresponding gate. `with_disabled` / `with_read_only` sync the
-        // pair, but a caller using `.with_aria_disabled(true)` /
-        // `.with_aria_readonly(true)` directly bypasses that sync, so
-        // this union keeps behaviour consistent.
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
         let effective_read_only =
             self.read_only || self.semantic_events.aria_state.readonly || effectively_disabled;
 
-        // ── 1. Base style ────────────────────────────────────────
+        use_has_signal_when(HasKind::Disabled, effectively_disabled);
+
         let inherited = match try_consume_context::<InheritedStyle>() {
             Some(InheritedStyle(parent)) => parent.inheritable_subset(),
             None => Style::default(),
@@ -358,7 +459,39 @@ impl Component for Input {
         let ua = input_ua_style(effectively_disabled);
         let raw_style = inherited.merge_style(&ua).merge_style(&self.style);
 
-        // ── 2. Visible text + cursor + selection ────────────────
+        let focus_state = focus();
+        let focused = focus_state != Focus::Not;
+        let focused_kb = focus_state == Focus::Keyboard;
+
+        let mut live: Vec<StyleVariant> = Vec::with_capacity(12);
+        if effectively_disabled {
+            live.push(StyleVariant::Disabled);
+        } else {
+            if *hovering.read() {
+                live.push(StyleVariant::Hover);
+            }
+            if *pressing.read() {
+                live.push(StyleVariant::Active);
+            }
+            if focused {
+                live.push(StyleVariant::Focus);
+                live.push(StyleVariant::FocusWithin);
+            }
+            if focused_kb {
+                live.push(StyleVariant::FocusVisible);
+            }
+        }
+        live.extend(self.semantic_events.aria_state.active_variants());
+        live.extend(self.semantic_events.has_state.active_variants());
+
+        let styled = raw_style.variants.apply_all(&live, raw_style.clone());
+
+        let cursor_icon = if effectively_disabled {
+            CursorIcon::NotAllowed
+        } else {
+            CursorIcon::Text
+        };
+
         let display_placeholder =
             self.value.is_empty() && self.placeholder.is_some() && preedit.read().is_none();
 
@@ -366,7 +499,7 @@ impl Component for Input {
         let cursor_utf16 = (*cursor.read()).min(committed_utf16);
         let cursor_byte = utf16_to_byte(&self.value, cursor_utf16);
 
-        let selection_enabled = matches!(self.mode, InputMode::Text);
+        let selection_enabled = !matches!(self.mode, InputMode::Password(_));
         let selection_range: Option<(usize, usize)> = if selection_enabled {
             match (*anchor.read(), *cursor.read()) {
                 (Some(a), c) if a != c => Some((a.min(c), a.max(c))),
@@ -377,25 +510,28 @@ impl Component for Input {
         };
 
         let (before_value, after_value) = self.value.split_at(cursor_byte);
-        let (before_display, after_display) = match self.mode {
-            InputMode::Password(ch) => (
+        let (before_display, after_display) = match self.mode.mask_char() {
+            Some(ch) => (
                 ch.to_string().repeat(before_value.encode_utf16().count()),
                 ch.to_string().repeat(after_value.encode_utf16().count()),
             ),
-            InputMode::Text => (before_value.to_string(), after_value.to_string()),
+            None => (before_value.to_string(), after_value.to_string()),
         };
 
-        let preedit_masked: Option<String> = preedit.read().as_ref().map(|p| match self.mode {
-            InputMode::Password(ch) => ch.to_string().repeat(p.chars().count()),
-            InputMode::Text => p.clone(),
-        });
-
+        let preedit_masked: Option<String> =
+            preedit
+                .read()
+                .as_ref()
+                .map(|p| match self.mode.mask_char() {
+                    Some(ch) => ch.to_string().repeat(p.chars().count()),
+                    None => p.clone(),
+                });
         let preedit_utf16_len = preedit_masked
             .as_ref()
             .map(|p| p.encode_utf16().count())
             .unwrap_or(0);
 
-        let display_cursor = if effectively_disabled || display_placeholder {
+        let display_cursor = if effectively_disabled || !focused {
             None
         } else if preedit_masked.is_some() {
             Some(cursor_utf16 + preedit_utf16_len)
@@ -403,17 +539,20 @@ impl Component for Input {
             Some(cursor_utf16)
         };
 
-        // ── 3. Key handling ──────────────────────────────────────
+        // ── Key handler ────────────────────────────────────────────
         let read_only = effective_read_only;
         let on_change = self.on_change.clone();
         let on_submit = self.on_submit.clone();
         let value_for_keys = self.value.clone();
         let max_len = self.max_length;
-        let password_mode = matches!(self.mode, InputMode::Password(_));
         let sel_enabled = selection_enabled;
+        let mode = self.mode;
 
         let on_key_down = move |e: Event<KeyboardEventData>| {
-            if read_only {
+            if matches!(e.key, Key::Named(NamedKey::Tab)) {
+                return;
+            }
+            if effectively_disabled {
                 return;
             }
 
@@ -443,7 +582,62 @@ impl Component for Input {
             };
 
             match &e.key {
-                // ── Clipboard ────────────────────────────────────
+                Key::Named(NamedKey::ArrowLeft) => {
+                    let extend = sel_enabled && e.modifiers.shift();
+                    let new_cursor = cur_utf16.saturating_sub(1);
+                    if extend {
+                        if (*anchor.read()).is_none() {
+                            anchor.set(Some(cur_utf16));
+                        }
+                    } else {
+                        anchor.set(None);
+                    }
+                    cursor.set(new_cursor);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    let extend = sel_enabled && e.modifiers.shift();
+                    let total = text.encode_utf16().count();
+                    let new_cursor = (cur_utf16 + 1).min(total);
+                    if extend {
+                        if (*anchor.read()).is_none() {
+                            anchor.set(Some(cur_utf16));
+                        }
+                    } else {
+                        anchor.set(None);
+                    }
+                    cursor.set(new_cursor);
+                    return;
+                }
+                Key::Named(NamedKey::Home) => {
+                    if sel_enabled && e.modifiers.shift() {
+                        if (*anchor.read()).is_none() {
+                            anchor.set(Some(cur_utf16));
+                        }
+                    } else {
+                        anchor.set(None);
+                    }
+                    cursor.set(0);
+                    return;
+                }
+                Key::Named(NamedKey::End) => {
+                    if sel_enabled && e.modifiers.shift() {
+                        if (*anchor.read()).is_none() {
+                            anchor.set(Some(cur_utf16));
+                        }
+                    } else {
+                        anchor.set(None);
+                    }
+                    cursor.set(text.encode_utf16().count());
+                    return;
+                }
+                Key::Character(c)
+                    if e.modifiers.ctrl() && c.eq_ignore_ascii_case("a") && sel_enabled =>
+                {
+                    anchor.set(Some(0));
+                    cursor.set(text.encode_utf16().count());
+                    return;
+                }
                 Key::Character(c) if e.modifiers.ctrl() && c.eq_ignore_ascii_case("c") => {
                     let copy = match sel {
                         Some((s, end)) => {
@@ -456,7 +650,22 @@ impl Component for Input {
                     if !copy.is_empty() {
                         let _ = Clipboard::set(copy);
                     }
+                    return;
                 }
+                Key::Named(NamedKey::Enter) => {
+                    if let Some(cb) = &on_submit {
+                        cb.call(text);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+
+            if read_only {
+                return;
+            }
+
+            match &e.key {
                 Key::Character(c) if e.modifiers.ctrl() && c.eq_ignore_ascii_case("x") => {
                     let copy = match sel {
                         Some((s, end)) => {
@@ -483,50 +692,84 @@ impl Component for Input {
                 }
                 Key::Character(c) if e.modifiers.ctrl() && c.eq_ignore_ascii_case("v") => {
                     if let Ok(pasted) = Clipboard::get() {
+                        // Filter by type, then clip to remaining
+                        // `max_length` room.
+                        let filtered = filter_paste(&pasted, mode);
+                        if filtered.is_empty() {
+                            return;
+                        }
+                        let to_insert = match max_len {
+                            Some(max) => {
+                                let current = text.chars().count();
+                                let sel_chars = selection_char_count(&text, sel);
+                                let after_delete = current.saturating_sub(sel_chars);
+                                let room = max.saturating_sub(after_delete);
+                                if room == 0 {
+                                    return;
+                                }
+                                filtered.chars().take(room).collect::<String>()
+                            }
+                            None => filtered,
+                        };
                         let new_cur = delete_sel(&mut text, sel);
-                        let mut inserted = pasted;
-                        if let Some(max) = max_len {
-                            let room = max.saturating_sub(text.chars().count());
+                        let insert_byte = utf16_to_byte(&text, new_cur);
+                        text.insert_str(insert_byte, &to_insert);
+                        cursor.set(new_cur + to_insert.encode_utf16().count());
+                        anchor.set(None);
+                        if let Some(cb) = &on_change {
+                            cb.call(text);
+                        }
+                    }
+                }
+                Key::Character(c) if !c.is_empty() => {
+                    // Filter the typed character(s) by type. A single
+                    // key event usually carries one char, but IME /
+                    // dead keys can carry several — filter each.
+                    let filtered: String = c
+                        .chars()
+                        .filter(|ch| !ch.is_control())
+                        .filter(|ch| mode.allows_char(*ch))
+                        .collect();
+                    if filtered.is_empty() {
+                        return;
+                    }
+                    if let Some(max) = max_len {
+                        let current = text.chars().count();
+                        let sel_chars = selection_char_count(&text, sel);
+                        let after_delete = current.saturating_sub(sel_chars);
+                        if after_delete + filtered.chars().count() > max {
+                            // If inserting would exceed max, trim to
+                            // fit rather than rejecting the whole key.
+                            let room = max.saturating_sub(after_delete);
                             if room == 0 {
                                 return;
                             }
-                            inserted = inserted.chars().take(room).collect();
-                        }
-                        let insert_byte = utf16_to_byte(&text, new_cur);
-                        text.insert_str(insert_byte, &inserted);
-                        cursor.set(new_cur + inserted.encode_utf16().count());
-                        anchor.set(None);
-                        if let Some(cb) = &on_change {
-                            cb.call(text);
-                        }
-                    }
-                }
-                Key::Character(c)
-                    if e.modifiers.ctrl() && c.eq_ignore_ascii_case("a") && sel_enabled =>
-                {
-                    anchor.set(Some(0));
-                    cursor.set(text.encode_utf16().count());
-                }
-                // ── Character input ──────────────────────────────
-                Key::Character(c) if !c.is_empty() => {
-                    if c.chars().any(|ch| !ch.is_control()) {
-                        let new_cur = delete_sel(&mut text, sel);
-                        if let Some(max) = max_len {
-                            if text.chars().count() + c.chars().count() > max {
-                                return;
+                            let new_cur = delete_sel(&mut text, sel);
+                            let to_insert: String = filtered.chars().take(room).collect();
+                            let insert_byte = utf16_to_byte(&text, new_cur);
+                            text.insert_str(insert_byte, &to_insert);
+                            cursor.set(new_cur + to_insert.encode_utf16().count());
+                            anchor.set(None);
+                            if let Some(cb) = &on_change {
+                                cb.call(text);
                             }
-                        }
-                        let insert_byte = utf16_to_byte(&text, new_cur);
-                        text.insert_str(insert_byte, c);
-                        cursor.set(new_cur + c.encode_utf16().count());
-                        anchor.set(None);
-                        if let Some(cb) = &on_change {
-                            cb.call(text);
+                            return;
                         }
                     }
+                    let new_cur = delete_sel(&mut text, sel);
+                    let insert_byte = utf16_to_byte(&text, new_cur);
+                    text.insert_str(insert_byte, &filtered);
+                    cursor.set(new_cur + filtered.encode_utf16().count());
+                    anchor.set(None);
+                    if let Some(cb) = &on_change {
+                        cb.call(text);
+                    }
                 }
-                // ── Editing ──────────────────────────────────────
                 Key::Named(NamedKey::Backspace) => {
+                    // Note: `min_length` does NOT block backspace.
+                    // Matches HTML `<input minlength>` — deleting below
+                    // the minimum is allowed, validation fails, caller
+                    // decides what to do.
                     let new_cur = if sel.is_some() {
                         delete_sel(&mut text, sel)
                     } else if cur_byte > 0 {
@@ -558,118 +801,138 @@ impl Component for Input {
                         cb.call(text);
                     }
                 }
-                // ── Navigation ───────────────────────────────────
-                Key::Named(NamedKey::ArrowLeft) => {
-                    let extend = sel_enabled && e.modifiers.shift();
-                    let new_cursor = cur_utf16.saturating_sub(1);
-                    if extend {
-                        if (*anchor.read()).is_none() {
-                            anchor.set(Some(cur_utf16));
-                        }
-                    } else {
-                        anchor.set(None);
-                    }
-                    cursor.set(new_cursor);
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    let extend = sel_enabled && e.modifiers.shift();
-                    let total = text.encode_utf16().count();
-                    let new_cursor = (cur_utf16 + 1).min(total);
-                    if extend {
-                        if (*anchor.read()).is_none() {
-                            anchor.set(Some(cur_utf16));
-                        }
-                    } else {
-                        anchor.set(None);
-                    }
-                    cursor.set(new_cursor);
-                }
-                Key::Named(NamedKey::Home) => {
-                    if sel_enabled && e.modifiers.shift() {
-                        if (*anchor.read()).is_none() {
-                            anchor.set(Some(cur_utf16));
-                        }
-                    } else {
-                        anchor.set(None);
-                    }
-                    cursor.set(0);
-                }
-                Key::Named(NamedKey::End) => {
-                    if sel_enabled && e.modifiers.shift() {
-                        if (*anchor.read()).is_none() {
-                            anchor.set(Some(cur_utf16));
-                        }
-                    } else {
-                        anchor.set(None);
-                    }
-                    cursor.set(text.encode_utf16().count());
-                }
-                Key::Named(NamedKey::Enter) => {
-                    if let Some(cb) = &on_submit {
-                        cb.call(text);
-                    }
-                }
                 _ => {}
             }
         };
 
-        // ── 4. Click / drag to position cursor + select ─────────
-        let holder_for_press = holder.clone();
-        let on_focus_press = move |e: Event<FocusPressEventData>| {
-            if read_only {
-                return;
-            }
-            let holder_ref = holder_for_press.peek();
-            let holder_borrow = holder_ref.0.borrow();
-            if let Some(inner) = holder_borrow.as_ref() {
-                let idx = inner
-                    .paragraph
-                    .cursor_index_at_point(e.element_location().to_tuple());
-                anchor.set(Some(idx));
-                cursor.set(idx);
+        let on_rect_focus_press = {
+            let holder = holder.clone();
+            let para_area = para_area.clone();
+            let mut cursor = cursor.clone();
+            let mut anchor = anchor.clone();
+            let mut is_dragging = is_dragging.clone();
+            move |e: Event<FocusPressEventData>| {
+                if effectively_disabled {
+                    return;
+                }
+                a11y_id.request_focus();
                 is_dragging.set(true);
+                let peeked = holder.peek();
+                let holder_borrow = (*peeked).0.borrow();
+                if let Some(inner) = holder_borrow.as_ref() {
+                    let area = *para_area.read();
+                    let loc = e.global_location().to_tuple();
+                    let relative = (loc.0 - area.min_x() as f64, loc.1 - area.min_y() as f64);
+                    let idx = inner.paragraph.cursor_index_at_point(relative);
+                    anchor.set(Some(idx));
+                    cursor.set(idx);
+                }
             }
         };
 
-        let holder_for_move = holder.clone();
-        let para_area_for_move = para_area.clone();
-        let on_global_pointer_move = move |e: Event<PointerEventData>| {
-            if !*is_dragging.read() || read_only {
-                return;
+        let on_para_focus_press = {
+            let holder = holder.clone();
+            let mut cursor = cursor.clone();
+            let mut anchor = anchor.clone();
+            let mut is_dragging = is_dragging.clone();
+            move |e: Event<FocusPressEventData>| {
+                if effectively_disabled {
+                    return;
+                }
+                a11y_id.request_focus();
+                is_dragging.set(true);
+                let peeked = holder.peek();
+                let holder_borrow = (*peeked).0.borrow();
+                if let Some(inner) = holder_borrow.as_ref() {
+                    let idx = inner
+                        .paragraph
+                        .cursor_index_at_point(e.element_location().to_tuple());
+                    anchor.set(Some(idx));
+                    cursor.set(idx);
+                }
             }
-            let holder_ref = holder_for_move.peek();
-            let holder_borrow = holder_ref.0.borrow();
-            if let Some(inner) = holder_borrow.as_ref() {
-                let area = *para_area_for_move.read();
-                let loc = e.global_location().to_tuple();
-                // `loc` is (f64, f64); `Area::min_x/y` are f32 — cast.
-                let relative = (loc.0 - area.min_x() as f64, loc.1 - area.min_y() as f64);
-                let idx = inner.paragraph.cursor_index_at_point(relative);
-                cursor.set(idx);
+        };
+
+        let on_global_pointer_move = {
+            let holder = holder.clone();
+            let para_area = para_area.clone();
+            let mut cursor = cursor.clone();
+            let is_dragging = is_dragging.clone();
+            move |e: Event<PointerEventData>| {
+                if !*is_dragging.read() || effectively_disabled {
+                    return;
+                }
+                let peeked = holder.peek();
+                let holder_borrow = (*peeked).0.borrow();
+                if let Some(inner) = holder_borrow.as_ref() {
+                    let area = *para_area.read();
+                    let loc = e.global_location().to_tuple();
+                    let relative = (loc.0 - area.min_x() as f64, loc.1 - area.min_y() as f64);
+                    let idx = inner.paragraph.cursor_index_at_point(relative);
+                    cursor.set(idx);
+                }
             }
         };
 
-        let on_global_pointer_up = move |_: Event<PointerEventData>| {
-            is_dragging.set_if_modified(false);
+        let on_global_pointer_up = {
+            let mut is_dragging = is_dragging.clone();
+            let mut pressing = pressing.clone();
+            move |_: Event<PointerEventData>| {
+                is_dragging.set_if_modified(false);
+                pressing.set_if_modified(false);
+            }
         };
 
-        // ── 5. IME preedit ───────────────────────────────────────
-        let on_ime_preedit = move |e: Event<ImePreeditEventData>| {
-            let text = e.data().text.clone();
-            preedit.set(if text.is_empty() { None } else { Some(text) });
+        let on_pointer_enter = {
+            let mut hovering = hovering.clone();
+            move |_: Event<PointerEventData>| {
+                hovering.set(true);
+            }
+        };
+        let on_pointer_leave = {
+            let mut hovering = hovering.clone();
+            move |_: Event<PointerEventData>| {
+                hovering.set(false);
+            }
+        };
+        let on_pointer_down = {
+            let mut pressing = pressing.clone();
+            move |_: Event<PointerEventData>| {
+                pressing.set(true);
+            }
+        };
+        let on_ime_preedit = {
+            let mut preedit = preedit.clone();
+            let mode_for_preedit = self.mode;
+            move |e: Event<ImePreeditEventData>| {
+                let raw = e.data().text.clone();
+                // Filter the preedit text to the allowed characters so
+                // masked / number / tel inputs don't show disallowed
+                // chars during composition.
+                let filtered: String = raw
+                    .chars()
+                    .filter(|ch| !ch.is_control())
+                    .filter(|ch| mode_for_preedit.allows_char(*ch))
+                    .collect();
+                preedit.set(if filtered.is_empty() {
+                    None
+                } else {
+                    Some(filtered)
+                });
+            }
         };
 
-        // ── 6. Cursor color ──────────────────────────────────────
-        let cursor_color: Color = StyledColor::from(raw_style.text_color.clone())
+        let cursor_color: Color = StyledColor::from(styled.text_color.clone())
             .to_color()
             .unwrap_or(black().into());
 
-        // ── 7. Paragraph child ───────────────────────────────────
         let mut para = paragraph()
             .holder(holder.read().clone())
             .min_width(Size::percent(100.0))
             .max_lines(1)
+            .padding(Gaps::new_all(0.0))
             .cursor_color(cursor_color)
+            .cursor(cursor_icon)
             .on_sized({
                 let mut para_area = para_area.clone();
                 move |e: Event<SizedEventData>| {
@@ -677,7 +940,7 @@ impl Component for Input {
                 }
             });
 
-        para = apply_text_style(para, &raw_style);
+        para = apply_text_style(para, &styled);
 
         if display_placeholder {
             para = para.color(gray_400());
@@ -699,18 +962,17 @@ impl Component for Input {
             para = para.cursor_index(idx);
         }
 
-        if !read_only {
-            para = para.on_focus_press(on_focus_press);
+        if !effectively_disabled {
+            para = para.on_focus_press(on_para_focus_press);
         }
 
-        // ── 8. Wrap in a horizontal ScrollView ───────────────────
-        let visible_text_for_scroll: String = match self.mode {
-            InputMode::Password(ch) => ch.to_string().repeat(self.value.encode_utf16().count()),
-            InputMode::Text => self.value.clone(),
+        let visible_text_for_scroll: String = match self.mode.mask_char() {
+            Some(ch) => ch.to_string().repeat(self.value.encode_utf16().count()),
+            None => self.value.clone(),
         };
         let cursor_for_scroll = cursor_utf16;
-        let padding_for_scroll = raw_style.padding;
-        let text_align_for_scroll = raw_style.text_align;
+        let padding_for_scroll = styled.padding;
+        let text_align_for_scroll = styled.text_align;
         let holder_for_scroll = holder.clone();
         let para_area_for_scroll = para_area.clone();
         let viewport_for_scroll = viewport_area.clone();
@@ -742,61 +1004,45 @@ impl Component for Input {
             })
             .child(para);
 
-        // ── 9. Outer Div — owns focus, hover, semantic events ────
-        // `Div` receives the semantic events (including `aria_state`) so
-        // it can push the active `StyleVariant::Aria*` entries into its
-        // live-variant set and fire `aria-disabled:*`,
-        // `aria-readonly:*`, `aria-invalid:*`, `aria-required:*`, and the
-        // other aria conditions in `raw_style.variants`.
-        let mut div_el: Div = div()
-            .with_disabled(effectively_disabled)
-            .with_semantic_events(self.semantic_events.clone())
-            .with_focusable(!effectively_disabled);
+        let mut rect_el = apply_to_rect(rect(), &styled);
+        rect_el = rect_el.cursor(cursor_icon);
 
-        *div_el.get_style() = raw_style;
-        *div_el.event_handlers_mut() = self.event_handlers.clone();
-        *div_el.accessibility_data_mut() = self.accessibility.clone();
+        *rect_el.event_handlers_mut() = self.event_handlers.clone();
+        *rect_el.accessibility_data_mut() = self.accessibility.clone();
 
         let a11y_role = match self.mode {
             InputMode::Password(_) => AccessibilityRole::PasswordInput,
-            InputMode::Text => AccessibilityRole::TextInput,
+            _ => AccessibilityRole::TextInput,
         };
 
-        let a11y_value: String = if password_mode {
-            if self.value.is_empty() {
-                String::new()
-            } else {
-                match self.mode {
-                    InputMode::Password(ch) => {
-                        ch.to_string().repeat(self.value.chars().count().min(8))
-                    }
-                    InputMode::Text => String::new(),
-                }
+        let a11y_value: String = match self.mode.mask_char() {
+            Some(ch) if !self.value.is_empty() => {
+                ch.to_string().repeat(self.value.chars().count().min(8))
             }
-        } else {
-            self.value.clone()
+            _ => self.value.clone(),
         };
 
-        div_el = div_el
+        let mut rect_el = rect_el
+            .a11y_id(a11y_id)
             .a11y_enabled(!effectively_disabled)
+            .a11y_focusable(!effectively_disabled)
             .a11y_auto_focus(self.auto_focus)
             .a11y_role(a11y_role)
-            .a11y_alt(a11y_value);
+            .a11y_alt(a11y_value)
+            .on_pointer_enter(on_pointer_enter)
+            .on_pointer_leave(on_pointer_leave);
 
-        if !read_only {
-            div_el = div_el.on_key_down(on_key_down);
-        }
-        div_el = div_el.on_ime_preedit(on_ime_preedit);
-
-        if selection_enabled && !read_only {
-            div_el = div_el
+        if !effectively_disabled {
+            rect_el = rect_el
+                .on_key_down(on_key_down)
+                .on_ime_preedit(on_ime_preedit)
+                .on_pointer_down(on_pointer_down)
+                .on_global_pointer_up(on_global_pointer_up)
                 .on_global_pointer_move(on_global_pointer_move)
-                .on_global_pointer_up(on_global_pointer_up);
+                .on_focus_press(on_rect_focus_press);
         }
 
-        div_el = div_el.child(scroll_view);
-
-        div_el
+        rect_el.child(scroll_view)
     }
 
     fn render_key(&self) -> DiffKey {

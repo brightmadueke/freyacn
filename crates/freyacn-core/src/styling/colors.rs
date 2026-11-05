@@ -26,6 +26,28 @@
 //!         .stop((purple_500().to_color().unwrap(), 100.0)),
 //! ).into();
 //! ```
+//!
+//! # Shadow tints
+//!
+//! Shadow presets in [`StyledExt`](crate::styling::StyledExt) — every
+//! `.shadow_*()` / `.text_shadow_*()` — construct their colors as
+//! `black().opacity(…)`, and `.shadow_color(..)` /
+//! `.text_shadow_color(..)` route their argument through the same
+//! `StyledColor → Color` conversion. **That conversion requires a solid
+//! fill** — passing a gradient, shader, or callback panics. Use the same
+//! shape for a custom shadow tint:
+//!
+//! ```
+//! // ✓ solid, will not panic — black at 20 % alpha
+//! let tint: Color = black().opacity(0.2).into();
+//!
+//! // ✓ solid, will not panic — brand blue at 40 % alpha
+//! let tint: Color = blue_500().opacity(0.4).into();
+//!
+//! // ✗ gradient, would panic in `.into::<Color>()` — and therefore in
+//! //   `.shadow_color(..)` / `.text_shadow_color(..)` as well.
+//! let bad = StyledColor::from(LinearGradient::new());
+//! ```
 
 use std::hash::{Hash, Hasher};
 
@@ -46,6 +68,55 @@ use paste::paste;
 ///
 /// `StyledColor` is **not `Copy`** (because `Fill` isn't, since it holds
 /// `Box`es for gradients/shaders). Clone if you need to duplicate it.
+///
+/// # Conversions
+///
+/// Anything implementing `Into<StyledColor>` can be passed to the
+/// colour setters on
+/// [`StyledExt`](crate::styling::StyledExt) — `.bg(..)`,
+/// `.text_color(..)`, `.border_color(..)`, `.ring_color(..)`,
+/// `.shadow_color(..)`, `.text_shadow_color(..)`. The concrete set of
+/// accepted types is:
+///
+/// | Type | Meaning |
+/// |---|---|
+/// | [`StyledColor`] | Pass-through (blanket `From<T> for T`). |
+/// | [`Color`] | Solid RGB/ARGB. |
+/// | [`Fill`] | Any fill variant, unchanged. |
+/// | [`LinearGradient`] / [`RadialGradient`] / [`ConicGradient`] | Gradient fills. |
+/// | [`ShaderFill`] | Shader-program fill. |
+/// | [`RenderCallback`] | Custom render closure. |
+/// | `(u8, u8, u8)` | RGB triplet, fully opaque. |
+/// | `(u8, u8, u8, f32)` | RGB + `0.0..=1.0` alpha. |
+/// | `(u8, u8, u8, u8)` | RGB + `u8` alpha. |
+///
+/// ## Ambiguity
+///
+/// `Default::default()` doesn't infer through `impl Into<StyledColor>`
+/// — the compiler can't know which of the ten implementing types you
+/// meant. Use the explicit type instead:
+///
+/// ```
+/// // ✓
+/// let sc = StyledColor::default();
+///
+/// // ✗ type annotations needed: cannot infer type
+/// // let sc = Default::default();
+/// ```
+///
+/// # Shadow tints
+///
+/// Shadow methods (`.shadow_color(..)` / `.text_shadow_color(..)`)
+/// require a **solid** fill and panic on gradients, shaders, or
+/// callbacks. Compose a tint from a palette function and `.opacity(..)`:
+///
+/// ```
+/// // ✓ solid
+/// let tint = black().opacity(0.2);
+///
+/// // ✗ panics in `.shadow_color(..)`
+/// let bad = StyledColor::from(LinearGradient::new());
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyledColor {
     fill: Fill,
@@ -189,6 +260,10 @@ impl Hash for StyledColor {
 }
 
 // ---- Conversions ----
+//
+// These are the ten `Into<StyledColor>` impls advertised by
+// `StyledColor::# Conversions`. Keeping the list here in one place makes
+// it easy to audit against the doc comment above.
 
 impl From<StyledColor> for Fill {
     fn from(c: StyledColor) -> Fill {
@@ -202,6 +277,22 @@ impl From<StyledColor> for Color {
     /// # Panics
     /// Panics if the `StyledColor` wraps a gradient, shader, or callback
     /// fill. Use [`StyledColor::to_color`] for a non-panicking variant.
+    ///
+    /// This conversion is used internally by
+    /// [`StyledExt::shadow_color`](crate::styling::StyledExt::shadow_color)
+    /// and
+    /// [`StyledExt::text_shadow_color`](crate::styling::StyledExt::text_shadow_color),
+    /// so passing a gradient to either of those methods panics. Shadow
+    /// tints must be solid — use `.opacity(..)` on a palette function to
+    /// dim them:
+    ///
+    /// ```
+    /// // ✓ solid, will not panic
+    /// let ok = black().opacity(0.2);
+    ///
+    /// // ✗ gradient, would panic in `.into::<Color>()`
+    /// let bad = StyledColor::from(LinearGradient::new());
+    /// ```
     fn from(c: StyledColor) -> Color {
         c.to_color()
             .expect("StyledColor does not wrap a solid Color")

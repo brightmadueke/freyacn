@@ -40,15 +40,15 @@
 //! ```
 //! use freyacn::prelude::*;
 //!
-//! // 1. Install a theme from JSON. The registry validates it, installs
-//! //    it as the thread-local active theme, and provides a reactive
-//! //    `State<Arc<Theme>>` to the current subtree.
-//! let themes = use_init_theme_registry(include_str!("../themes/default-dark.json"));
+//! // 1. Install a theme from JSON. The loader validates it, installs it
+//! //    as the thread-local active theme, and provides a reactive
+//! //    `State<Arc<Theme>>` plus a `ThemeHandle` to the current subtree.
+//! let themes = load_theme_from_json(include_str!("../themes/default-dark.json"));
 //!
 //! // 2. Every element now starts from the theme's baseline — no
 //! //    per-element wiring required.
 //! let style = Style::default()
-//!     .style("p-4 rounded-lg bg-card hover:bg-muted border border-border");
+//!     .style("p-4 rounded-lg bg-card hover:bg-muted border border-border shadow-sm");
 //!
 //! // 3. Read a token anywhere below the provider.
 //! let state = use_cn_theme();
@@ -63,6 +63,12 @@
 //! themes.set_active("default-light").unwrap();
 //! ```
 //!
+//! The four loaders — `load_theme` (file path), `load_theme_from_json`
+//! (embedded JSON), `load_themes` (directory), `load_themes_with_default`
+//! (directory + a specific id) — all install the chosen theme as the
+//! thread-local active theme and provide a [`ThemeHandle`] to the subtree.
+//! See [`theme`] for the full loader list and how to switch themes.
+//!
 //! For a real element tree see [`elements`] — every element constructor
 //! (`div()`, `text(..)`, `button()`, …) accepts the same styling chain.
 //!
@@ -73,7 +79,7 @@
 //! | Layer   | Item | What it does |
 //! |---------|------|--------------|
 //! | Theme   | [`Theme`], [`ThemeRegistry`], [`ThemeHandle`], [`ComponentState`] | JSON design tokens; palette refs, gradients, component- and state-scoped tokens; thread-local active theme. |
-//! | Data    | [`Style`] | One flat struct covering every paint / typography / border / layout attribute. |
+//! | Data    | [`Style`] | One flat struct covering every paint / typography / border / shadow / layout attribute. |
 //! | Builder | [`StyledExt`] | Fluent `self -> Self` utilities on anything that owns a `Style`; `ThemedExt` adds token-path helpers. |
 //! | Parser  | [`StyledString`] | Tailwind class strings that fan into the same `Style` mutations. |
 //! | State   | [`StyleVariant`] / [`StyleVariants`] | Pseudo-state patches (`hover:`, `focus:`, `dark:`, `aria-invalid:`, …) stored *on* the style. |
@@ -138,22 +144,30 @@
 //!
 //! ## Loading
 //!
-//! [`ThemeRegistry`] supports:
+//! Four loader functions cover the common cases:
 //!
-//! - Loading from a JSON string via [`ThemeRegistry::load`].
-//! - Loading from a directory of `*.json` files via [`ThemeRegistry::load_dir`].
-//! - Hot reload by re-reading the directory via [`ThemeRegistry::reload_dir`].
-//! - Lookup by id via [`ThemeRegistry::get`], active-theme selection via
-//!   [`ThemeRegistry::set_active`], and enumeration via
-//!   [`ThemeRegistry::list`] / [`ThemeRegistry::ids`].
+//! - [`load_theme`] — one `.json` file on disk (accepts `&str`, `String`,
+//!   `&Path`, or `PathBuf`).
+//! - [`load_theme_from_json`] — embedded JSON via `include_str!`, or any
+//!   in-memory string.
+//! - [`load_themes`] — a directory of `*.json` files; activates the first
+//!   one in filesystem order.
+//! - [`load_themes_with_default`] — a directory plus a specific theme id
+//!   to activate after loading.
+//!
+//! All four must be called inside a Freya component (they use `use_hook`).
+//! [`ThemeRegistry`] is the lower-level store for tests, CLI tooling, and
+//! custom wiring — `load` / `load_dir` / `reload_dir` / `set_active` /
+//! `list` / `ids` / `get`.
 //!
 //! ## Reactivity
 //!
-//! [`use_init_theme_registry`] wraps the registry in a [`ThemeHandle`] and
-//! provides it (plus a `State<Arc<Theme>>` of the active theme) to the
-//! current subtree. Switching themes updates **both** the thread-local
-//! active theme (so `Style::default()` picks up new values) **and** the
-//! `State` subscribers (so anything reading `use_cn_theme()` re-renders).
+//! The loader functions wrap the registry in a [`ThemeHandle`] and provide
+//! it — plus a `State<Arc<Theme>>` of the active theme — to the current
+//! subtree. Switching themes updates **both** the thread-local active
+//! theme (so `Style::default()` picks up new values) **and** the `State`
+//! subscribers (so anything reading `use_cn_theme()` / `use_theme()`
+//! re-renders).
 //!
 //! This dual update is why theme switches feel instant: element styles are
 //! derived from `Style::default()` at render time, so an active-theme swap
@@ -176,6 +190,7 @@
 //!     .border_1()
 //!     .border_color(neutral_700())
 //!     .rounded_md()
+//!     .shadow_md()
 //!     .hover(|s| s.bg(neutral_800()))
 //!     .active(|s| s.bg(neutral_950()))
 //!     .focus_visible(|s| s.ring_2().ring_color(blue_500()))
@@ -220,12 +235,83 @@
 //! (`focus-visible:ring-[3px] focus-visible:ring-ring/50`), but **not a
 //! true offset** — the "ring" and the "border" are the same `Border`
 //! struct, so you can't have both a visible border and a separate ring at
-//! once. If you need them independently, use a wrapper `div()`.
+//! once. If you need them independently, either use a wrapper `div()` or
+//! — now that [`Style::shadows`] exists — build a **true** offset ring
+//! from a spread shadow (see the Shadows section below).
 //!
 //! One sharp edge on top of that: `.border_none()` doesn't clear an
 //! existing border inside a variant (both sides are `None`, so the merge
 //! skips it). Use `.border_0()` (zero-width `Some(Border)`) to visually
 //! clear a border in a `:hover` / `:focus` variant. See [Reset
+//! limitation](crate::styling#reset-limitation).
+//!
+//! ## Shadows
+//!
+//! `Style` carries two shadow vectors:
+//!
+//! - `Style::shadows: Vec<Shadow>` — **box shadows**, drawn around the
+//!   element's frame (Tailwind `shadow-*`). Does not inherit, matching
+//!   CSS.
+//! - `Style::text_shadows: Vec<TextShadow>` — **glyph shadows**, drawn
+//!   behind the text layer only (Tailwind `text-shadow-*`). Does inherit,
+//!   also matching CSS.
+//!
+//! Size presets **replace** the vector; the base `.shadow(..)` /
+//! `.text_shadow(..)` methods **append**. That mirrors CSS: writing
+//! `box-shadow: a; box-shadow: b` in a stylesheet leaves only `b`, but
+//! `box-shadow: a, b` renders both layers. Manual multi-layer shadows
+//! therefore use the base methods:
+//!
+//! ```
+//! div()
+//!     .shadow(Shadow::new().y(2.0).blur(4.0).color(black().opacity(0.1)))
+//!     .shadow(Shadow::new().y(8.0).blur(16.0).color(black().opacity(0.05)))
+//! ```
+//!
+//! Utilities:
+//!
+//! | Helper | Tailwind | Effect |
+//! |---|---|---|
+//! | `.shadow(..)` | — | Append one shadow |
+//! | `.shadow_none()` | `shadow-none` | Clear the vector |
+//! | `.shadow_2xs()` … `.shadow_2xl()` | `shadow-{size}` | **Replace** with the Tailwind v4.1 preset |
+//! | `.shadow_inner()` | `shadow-inner` | **Replace** with the inset preset |
+//! | `.shadow_color(..)` | `shadow-{color}` | Recolour every layer |
+//! | `.text_shadow(..)` | — | Append one glyph shadow |
+//! | `.text_shadow_none()` | `text-shadow-none` | Clear the vector |
+//! | `.text_shadow_2xs()` … `.text_shadow_lg()` | `text-shadow-{size}` | **Replace** with the Tailwind v4.1 preset |
+//! | `.text_shadow_color(..)` | `text-shadow-{color}` | Recolour every layer |
+//!
+//! `shadow_color` / `text_shadow_color` are meant to be chained *after* a
+//! size, matching Tailwind's `shadow-{size} shadow-{color}` pairing — a
+//! no-op when the vector is empty.
+//!
+//! **True offset ring.** Because `Style::shadows` is a separate field from
+//! `Style::border`, a real focus ring is now buildable — a `0 0 0 {width}
+//! {colour}` shadow reproduces Tailwind v4's offset-ring semantics without
+//! eating into the element's padding:
+//!
+//! ```
+//! button()
+//!     .rounded_md()
+//!     .focus_visible(|s| {
+//!         s.shadow(
+//!             Shadow::new().spread(3.0).color(blue_500().opacity(0.5))
+//!         )
+//!     })
+//!     .child("Save")
+//! ```
+//!
+//! Only primitives that implement `EffectExt` render box shadows (`div`,
+//! `button`, `checkbox`, `radio`, `input`, `image`); `apply_to_rect`
+//! iterates `Style::shadows` for you. Text shadows render on text
+//! primitives (`text`, `p`) via `apply_text_style`.
+//!
+//! One caveat shared with borders: `.shadow_none()` / `.text_shadow_none()`
+//! can't cancel a shadow from inside a variant (both sides are `vec![]`,
+//! so the merge skips it). If you need to drop a shadow in `:hover` /
+//! `:focus`, omit the base style on the variant pass instead of trying to
+//! clear it — or use `.border_0()` for border-shaped cases. See [Reset
 //! limitation](crate::styling#reset-limitation).
 //!
 //! # Elements
@@ -397,9 +483,13 @@
 //!   map, then the theme's *color* map. Kebab-case and camelCase are both
 //!   accepted, so `text-primary-foreground` matches `primaryForeground`
 //!   from the theme JSON.
+//! - **Shadow utilities.** `shadow-{2xs,xs,sm,md,lg,xl,2xl,inner,none}`
+//!   and `text-shadow-{2xs,xs,sm,md,lg,none}` map to the same presets as
+//!   the fluent API. `shadow-{color}` recolours every active layer.
 //! - **`ring-*` utilities** mapped onto the border — `ring-[3px]` becomes
 //!   border width, `ring-ring/50` becomes border colour at 50 %. See the
-//!   Border section for the "not a true offset ring" caveat.
+//!   Border section for the "not a true offset ring" caveat and the
+//!   shadow-based alternative.
 //! - **Arbitrary values** (`w-[137px]`, `text-[12.8px]`, `bg-[#ff0000]`).
 //! - **CSS custom properties** (`[--brand:#f00]`) and arbitrary
 //!   properties (`[width:100px]`), exposed via `StyledString` custom
@@ -429,7 +519,11 @@
 //! as load-bearing.
 //!
 //! Border utilities use `border_*`, **not** `b_*` — `b_*` would collide
-//! visually with `bg_*` and neither matches the Tailwind spec.
+//! visually with `bg_*` and neither matches the Tailwind spec. Shadow
+//! utilities use `shadow_*` (matches Tailwind's `shadow-*`) and
+//! `text_shadow_*` (matches `text-shadow-*`); the base `.shadow(..)` /
+//! `.text_shadow(..)` methods are one underscore shorter to take a raw
+//! `Shadow` / `TextShadow`.
 //!
 //! State props on elements use a `with_` prefix (`.with_checked(..)`,
 //! `.with_selected(..)`, `.with_disabled(..)`, `.with_read_only(..)`) so
@@ -454,12 +548,14 @@
 //!            black().into());
 //! ```
 //!
-//! Borders test the same way (`Option<Border>` derives `PartialEq`):
+//! Borders and shadows test the same way (`Option<Border>` and
+//! `Vec<Shadow>` derive `PartialEq`):
 //!
 //! ```
-//! let base = Style::default().border_2().border_color(red_500());
+//! let base = Style::default().border_2().border_color(red_500()).shadow_md();
 //! let hovered = applied(base.clone(), &[StyleVariant::Hover]);
 //! assert!(hovered.border.as_ref().map_or(false, |b| !b.is_visible()));
+//! assert_eq!(base.shadows.len(), 2); // shadow-md is two layers
 //! ```
 //!
 //! Themes test by constructing them explicitly — `Style::themed(&theme)`
@@ -467,7 +563,7 @@
 //! state:
 //!
 //! ```
-//! let theme = Theme::from_json(include_str!("../themes/default-dark.json")).unwrap();
+//! let theme = Theme::from_json_str(include_str!("../themes/default-dark.json"));
 //! let base = Style::themed(&theme);
 //! assert_eq!(base.text_color, theme.fill("foreground").unwrap());
 //! ```
@@ -504,6 +600,9 @@
 //! | `border-2 border-gray-200` | `.border_2().border_color(gray_200())` |
 //! | `border-l-4` | `.border_l(4.0)` |
 //! | `rounded-lg` | `.rounded_lg()` |
+//! | `shadow-md` | `.shadow_md()` *or* `.style("shadow-md")` |
+//! | `shadow-lg shadow-neutral-500/50` | `.shadow_lg().shadow_color(neutral_500().opacity(0.5))` |
+//! | `text-shadow-sm` | `.text_shadow_sm()` |
 //! | `font-semibold` | `.font_semibold()` |
 //! | `hover:bg-neutral-800` | `.hover(\|s\| s.bg(neutral_800()))` |
 //! | `focus-visible:ring-2` | `.focus_visible(\|s\| s.ring_2())` |
@@ -529,13 +628,12 @@
 //! - **Descendant / sibling combinators.** Same reason.
 //! - **Transitions / animations.** A separate layer; the natural extension
 //!   point is to interpolate between two applied snapshots.
-//! - **True offset rings** (Tailwind v4's `ring-*` paints an outline
-//!   *outside* the border, on its own layer). `Style` has no separate ring
-//!   field, so `ring-*` is approximated by writing to `Style::border` —
-//!   see the Border section. Visually close for the common shadcn
-//!   `focus-visible:ring-[3px]` pattern, but not a true offset. A
-//!   `box-shadow`-style ring layer that doesn't collide with `border` is
-//!   the natural future shape.
+//! - **`ring-*` utilities that paint a true offset ring.** A true offset
+//!   ring *is* implementable now that [`Style::shadows`] exists — see the
+//!   Shadows section — but the `ring-*` utilities still write to
+//!   `Style::border`. Migrating them to `Style::shadows` is the natural
+//!   next step; it's held back only by the change in visual semantics for
+//!   anyone relying on the current border-based approximation.
 //!
 //! # FAQ
 //!
@@ -548,21 +646,22 @@
 //!
 //! **Can I use FreyaCN without a theme?**
 //! Yes. `Style::bare()` gives you every field at its default (transparent
-//! background, black text, no border, no padding). `Style::default()` (the
-//! `Default` impl) applies the thread-local active theme on top of `bare()`.
-//! If you never call `use_init_theme_registry`, `active_theme()` returns
-//! a fallback that behaves like `bare()`.
+//! background, black text, no border, no padding, empty shadow vectors).
+//! `Style::default()` (the `Default` impl) applies the thread-local active
+//! theme on top of `bare()`. If you never call one of the loader functions,
+//! `active_theme()` returns a fallback that behaves like `bare()`.
 //!
 //! **How do I reset a field to its default?**
 //! Because `merge_style` uses a "differs from `Style::bare()`" test, a
 //! field whose value equals its bare default **cannot override** an
 //! ancestor's non-default value. This bites `padding: 0`, `margin: 0`,
-//! `radius: 0`, `cursor: default`, and `border: None` in variants. For
-//! borders, use `.border_0()` (not `.border_none()`); for the others,
-//! either set a small non-default value or use `.no_default_style()` on
-//! the element to skip UA defaults. See [Reset
-//! limitation](crate::styling#reset-limitation) for the full story and
-//! the long-term fix (`StylePatch` with `Option<T>` fields).
+//! `radius: 0`, `cursor: default`, `border: None`, and `shadows: vec![]`
+//! in variants. For borders, use `.border_0()` (not `.border_none()`);
+//! for shadows, omit the base style on the variant pass rather than trying
+//! to clear it; for the others, either set a small non-default value or
+//! use `.no_default_style()` on the element to skip UA defaults. See
+//! [Reset limitation](crate::styling#reset-limitation) for the full story
+//! and the long-term fix (`StylePatch` with `Option<T>` fields).
 //!
 //! **Why does `with_` prefix every state prop?**
 //! So `StyledExt`'s variant methods — `.checked(..)`, `.selected(..)`,
@@ -579,13 +678,15 @@
 //! `attach_pointer_handlers` / `use_semantic_focus_events` for events.
 //!
 //! **Where do I put theme files?**
-//! Anywhere `include_str!` can reach. The convention is `themes/*.json`
-//! at the crate root (matches `include_str!("../themes/default-dark.json")`).
+//! Anywhere `include_str!` can reach, or anywhere the four loaders can
+//! reach at runtime. The convention is `themes/*.json` at the crate root
+//! (matches `load_theme("themes/default-dark.json")` and
+//! `include_str!("../themes/default-dark.json")`).
 //!
 //! # Where to look next
 //!
 //! - **[`theme`]** — JSON theme format, palette, component/state resolution,
-//!   hot reload.
+//!   the four loader functions, hot reload.
 //! - **[`styling`]** — the full styling explainer, variant precedence,
 //!   string-parser grammar, primitive-side element recipe, the theme-
 //!   defaults vs bare-patches split.
@@ -611,6 +712,10 @@
 //! [`theme`]: crate::theme
 //! [`Fill`]: freya_core::prelude::Fill
 //!
+//! [`load_theme`]: crate::theme::load_theme
+//! [`load_theme_from_json`]: crate::theme::load_theme_from_json
+//! [`load_themes`]: crate::theme::load_themes
+//! [`load_themes_with_default`]: crate::theme::load_themes_with_default
 //! [`ThemeRegistry::load`]: crate::theme::ThemeRegistry::load
 //! [`ThemeRegistry::load_dir`]: crate::theme::ThemeRegistry::load_dir
 //! [`ThemeRegistry::reload_dir`]: crate::theme::ThemeRegistry::reload_dir
@@ -618,7 +723,6 @@
 //! [`ThemeRegistry::set_active`]: crate::theme::ThemeRegistry::set_active
 //! [`ThemeRegistry::list`]: crate::theme::ThemeRegistry::list
 //! [`ThemeRegistry::ids`]: crate::theme::ThemeRegistry::ids
-//! [`use_init_theme_registry`]: crate::theme::load_theme_registry
 //! [`StyleVariant::priority`]: crate::styling::StyleVariant::priority
 
 pub mod cn;
@@ -634,12 +738,13 @@ pub mod utils;
 ///
 /// - **Elements** — `div()`, `text(..)`, `p(..)`, `image(..)`, `icon(..)`,
 ///   `button()`, `checkbox()`, `radio()`, `input(..)` and their types.
-/// - **Styling** — `Style`, `StyledExt`, `StyledString`, `StyledColor`,
-///   `StyleVariant`, `StyleVariants`, `InheritedStyle`.
+/// - **Styling** — `Style`, `StyledExt`, `ThemedExt`, `StyledString`,
+///   `StyledColor`, `StyleVariant`, `StyleVariants`, `InheritedStyle`.
 /// - **Semantic events** — `HasSemanticEvents`, `SemanticEvents`.
-/// - **Theme** — every type from [`crate::theme`].
-/// - **Freya icons** — `lucide` module (not its contents, to avoid
-///   colliding with `image()` / `radio()` / `icon()` constructors).
+/// - **Theme** — everything from [`crate::theme`], including the four
+///   loaders (`load_theme`, `load_theme_from_json`, `load_themes`,
+///   `load_themes_with_default`) and the reactive hooks (`use_theme`,
+///   `use_cn_theme`, `use_theme_handle`, `get_theme_or_default`).
 /// - **Utils** — everything from [`crate::utils`].
 ///
 /// Freya's own prelude is *not* re-exported here; import it explicitly if
@@ -708,16 +813,3 @@ pub mod base {
     #[doc(inline)]
     pub use freya::prelude::*;
 }
-
-/// Re-export of `freya::icons` at the crate root.
-///
-/// Enabled by the `icons` feature (forwards to `freya/icons`). Gives you
-/// the raw `IconPath` / icon sets freya ships, without going through the
-/// prelude.
-///
-/// ```rust,ignore
-/// use freyacn-core::icons;
-/// ```
-#[cfg(feature = "freya_icons")]
-#[doc(inline)]
-pub use freya::icons;

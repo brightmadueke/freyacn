@@ -8,9 +8,9 @@ pub fn stub() -> TokenStream2 {
         "`#[struct_fields(...)]` must be placed **below** `#[component(...)]`:\n\
          \n\
          ```\n\
-         #[component(props(name: String))]\n\
-         #[struct_fields(tooltip: MyTooltip)]\n\
-         fn Card(name: String) { … }\n\
+         #[component]\n\
+         #[struct_fields(tooltip: Option<MyTooltip>)]\n\
+         fn Card(title: String) { … }\n\
          ```\n\
          \n\
          Attributes are processed top-to-bottom; `#[component]` consumes\n\

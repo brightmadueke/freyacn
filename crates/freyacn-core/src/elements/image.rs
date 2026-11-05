@@ -1,4 +1,5 @@
 use crate::styling::apply::apply_to_rect;
+use crate::styling::has::{HasKind, use_has_signal, use_has_signal_when};
 use crate::styling::semantic_events::{
     HasSemanticEvents, SemanticEvents, attach_pointer_handlers, use_semantic_focus_events,
 };
@@ -52,6 +53,21 @@ impl From<String> for Src {
     }
 }
 
+/// An HTML `<img>`-like element.
+///
+/// ## Shadows
+///
+/// `ImagePrimitive` has no `.shadow(..)`. Box and text shadows are both
+/// dropped uniformly, whether the image loads or shows its fallback —
+/// the fallback branch strips shadows from its cloned style before
+/// rendering into a `rect()`. Wrap in a `div()` for a shadowed image.
+///
+/// ## Has: signaling
+///
+/// Signals [`HasKind::Img`] to the nearest ancestor `HasContext`
+/// (fires `has-[img]:` on that ancestor). Signals
+/// [`HasKind::Disabled`] when disabled. Both are subject to the
+/// one-frame delay and persistence caveats of [`crate::styling::has`].
 #[derive(PartialEq, Clone)]
 pub struct Image {
     src: Src,
@@ -103,32 +119,18 @@ impl Image {
         self
     }
 
-    /// Disable the image.
-    ///
-    /// Sets the native `disabled` flag **and** the `aria-disabled` state,
-    /// so both `disabled:*` and `aria-disabled:*` class strings fire from
-    /// a single call. Pointer handlers are suppressed and the image is
-    /// removed from the focus order.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self.semantic_events.aria_state.disabled = v;
         self
     }
 
-    /// Controlled checked state.
-    ///
-    /// Sets the native `checked` flag **and** the `aria-checked` state, so
-    /// both `checked:*` and `aria-checked:*` class strings fire.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self.semantic_events.aria_state.checked = v;
         self
     }
 
-    /// Controlled selected state.
-    ///
-    /// Sets the native `selected` flag **and** the `aria-selected` state,
-    /// so both `selected:*` and `aria-selected:*` class strings fire.
     pub fn with_selected(mut self, v: bool) -> Self {
         self.selected = v;
         self.semantic_events.aria_state.selected = v;
@@ -167,7 +169,7 @@ impl HasSemanticEvents for Image {
     }
 }
 
-// ─── Loading (unchanged) ────────────────────────────────────────────────
+// ─── Loading ────────────────────────────────────────────────────────────
 
 fn decode(bytes: Bytes) -> Option<ImageHandle> {
     use freya_engine::prelude::{Data, SkImage};
@@ -254,13 +256,12 @@ impl Component for Image {
             }
         };
 
-        // Native `disabled` and `aria-disabled` are treated uniformly:
-        // either one suppresses pointer handlers, focusability, and (if
-        // the style requests it) the allowed-cursor. `with_disabled`
-        // syncs both, but a caller using `.with_aria_disabled(true)`
-        // directly bypasses that sync, so this union keeps behaviour
-        // consistent.
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
+
+        // `has:` signals — fire before the fallback branch returns so
+        // both branches (loaded / fallback) signal the same way.
+        use_has_signal(HasKind::Img);
+        use_has_signal_when(HasKind::Disabled, effectively_disabled);
 
         // ── 1. Base style ───────────────────────────────────────────────
         let base = match try_consume_context::<InheritedStyle>() {
@@ -281,7 +282,7 @@ impl Component for Image {
         let focused_kb = focus_state == Focus::Keyboard;
         let focused = matches!(focus_state, Focus::Keyboard | Focus::Pointer);
 
-        let mut live = Vec::with_capacity(12);
+        let mut live = Vec::with_capacity(14);
         if effectively_disabled {
             live.push(StyleVariant::Disabled);
         } else {
@@ -305,26 +306,24 @@ impl Component for Image {
         if self.selected {
             live.push(StyleVariant::Selected);
         }
-
-        // ── aria-* state → live variants ────────────────────────────────
-        // Every `aria-*:` class registered on this image (e.g.
-        // `aria-invalid:border-red-500`) only fires when the matching
-        // `StyleVariant::Aria*` is present in `live`. `AriaState` is
-        // bundled inside `SemanticEvents`, so wiring it here means
-        // `.with_aria_invalid(true)` (etc.) drives the styles.
         live.extend(self.semantic_events.aria_state.active_variants());
+        live.extend(self.semantic_events.has_state.active_variants());
 
         let style = variants.apply_all(&live, base);
 
-        // ── 3. Focus events (both branches) ─────────────────────────────
+        // ── 3. Focus events ─────────────────────────────────────────────
         use_semantic_focus_events(&self.semantic_events, focus_state);
 
-        // ── 4. Provide to descendants (both branches) ───────────────────
+        // ── 4. Provide to descendants ───────────────────────────────────
         use_provide_context(|| InheritedStyle(style.clone()));
 
         // ── 5a. Fallback branch ─────────────────────────────────────────
         let Some(handle) = handle else {
-            let mut el = apply_to_rect(rect(), &style).maybe_child(self.fallback.clone());
+            let mut fallback_style = style.clone();
+            fallback_style.shadows.clear();
+            fallback_style.text_shadows.clear();
+
+            let mut el = apply_to_rect(rect(), &fallback_style).maybe_child(self.fallback.clone());
 
             *el.event_handlers_mut() = self.event_handlers.clone();
             *el.accessibility_data_mut() = self.accessibility.clone();

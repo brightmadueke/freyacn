@@ -14,69 +14,42 @@
 //!   as fluent builder methods (`Style::default().bg(blue_500()).p_4()`)
 //!   and as parsed class strings
 //!   (`.style("bg-primary p-4 hover:bg-primary/90")`). Supports theme
-//!   tokens, the full `aria-*` variant family, `ring-*` utilities
-//!   (mapped onto the border), and arbitrary bracketed values.
+//!   tokens, the full `aria-*` and `has-*` variant families, `ring-*`
+//!   utilities (mapped onto the border), arbitrary bracketed values, and
+//!   Tailwind v4.1 shadow presets (`.shadow_md()`, `.text_shadow_lg()`).
 //! - **Elements** — Pre-built HTML-like primitives (`div`, `text`, `p`,
 //!   `image`, `icon`, `button`, `checkbox`, `radio`, `input`) wired to
 //!   a shared style cascade.
 //! - **Procedural Macros** — Ergonomic component generation
-//!   (`#[component]`), enum-based styling variants (`#[variant]`), and
-//!   extension bundles (`#[extensions]`).
+//!   (`#[component]`, with the `#[struct_fields]` modifier for injecting
+//!   fields into the generated props struct), enum-based styling
+//!   variants (`#[variant]`), and extension bundles (`#[extensions]`).
 //! - **Class Merging** — The [`cn!`] macro for conditional class-name
 //!   joining.
 //!
 //! This crate — **`freyacn`** — is the primary facade for the FreyaCN
 //! ecosystem. It re-exports functionality from `freyacn-core` and
 //! `freyacn_macros`, plus optional sibling crates (`freyacn-shadcn`,
-//! `freyacn-material3`) and any `freya` feature enabled via its own
-//! features.
+//! `freyacn-material3`) behind their respective features.
+//!
+//! The facade does **not** re-export any `freya` modules. For raw Freya
+//! primitives (when you need to mix them with FreyaCN elements), import
+//! [`base`] — a straight re-export of `freya::prelude` — alongside
+//! FreyaCN's prelude.
 //!
 //! ---
 //!
 //! # Cargo features
 //!
-//! Every `freya_*` feature forwards straight through to `freya` via
-//! `freyacn-core`. Enable them individually for fine-grained control, or
-//! use one of the bundles.
+//! Core FreyaCN — themes, styling, elements, macros — is always present.
+//! Optional **component presets** are gated per-feature:
 //!
-//! | Feature | Enables |
-//! |---|---|
-//! | `freya_winit` | `freya/winit` (default) |
-//! | `freya_gpu` | `freya/gpu` (default) |
-//! | `freya_accessibility` | `freya/accessibility` (default) |
-//! | `freya_platform_text_gamma` | `freya/platform-text-gamma` (default) |
-//! | `freya_router` | `freya::router` |
-//! | `freya_i18n` | `freya::i18n` |
-//! | `freya_remote_asset` | `freya/remote-asset` |
-//! | `freya_tray` | `freya::tray` |
-//! | `freya_sdk` / `freya_sdk_tokio` | `freya::sdk` (+ tokio) |
-//! | `freya_gif` | GIF viewer |
-//! | `freya_video` | `freya::video` |
-//! | `freya_plot` | `freya::plot` |
-//! | `freya_material_design` | `freya::material_design` |
-//! | `freya_calendar` | Calendar components |
-//! | `freya_icons` | `freya::icons` |
-//! | `freya_icons_lucide` | `freya::icons::lucide` |
-//! | `freya_radio` | `freya::radio` |
-//! | `freya_query` | `freya::query` |
-//! | `freya_markdown` | `freya::markdown` |
-//! | `freya_html` | `freya::html` |
-//! | `freya_titlebar` | `freya::titlebar` |
-//! | `freya_borderless` | `freya::borderless` |
-//! | `freya_terminal` / `freya_terminal_pty` | `freya::terminal` (+ PTY) |
-//! | `freya_code_editor` | `freya::code_editor` |
-//! | `freya_camera` | `freya::camera` |
-//! | `freya_web` | `freya::web` |
-//! | `freya_devtools` | Freya devtools |
-//! | `freya_metrics` | Freya metrics plugin |
-//! | `freya_hotpath` | Freya hotpath instrumentation |
-//! | `freya_hotreload` | Hot reload via `dx` |
-//! | `freya_zoom_shortcuts` | Ctrl/Cmd `+`/`-`/`0` zoom |
-//! | `shadcn` | shadcn/ui component set (`freyacn::shadcn`) |
-//! | `material3` | Material 3 component set (`freyacn::material3`) |
-//! | `freya_all` | Every `freya_*` feature above |
-//! | `all` | `freya_all` + `shadcn` + `material3` |
-//! | `full` | Production subset (no devtools / hotreload / metrics / hotpath) + both presets |
+//! | Feature | Enables | Default |
+//! |---|---|---|
+//! | `shadcn` | shadcn/ui component set, re-exported at [`shadcn`] | off |
+//! | `material3` | Material Design 3 component set, at [`material3`] | off |
+//! | `all` | Both presets (`shadcn` + `material3`) | off |
+//! | `full` | Both presets — currently identical to `all` | off |
 //!
 //! ---
 //!
@@ -85,7 +58,6 @@
 //! ```rust,no_run
 //! extern crate freyacn;
 //! use freyacn::prelude::*;
-//! use freyacn::icons::lucide;
 //!
 //! #[component(ext(children))]
 //! fn ActionButton(label: String) {
@@ -95,17 +67,24 @@
 //!         .child(text(label.clone()))
 //! }
 //!
+//! #[component]
 //! fn App() {
-//!     let themes = use_init_theme_registry(include_str!("../themes/default-dark.json"));
+//!     // Load `themes/default-dark.json` and install it as the active theme.
+//!     let _themes = load_theme("themes/default-dark.json");
 //!
 //!     div()
 //!         .bg_background()
 //!         .text_foreground()
 //!         .p_6()
-//!         .child(icon(lucide::check()).size(16.0))
 //!         .child(ActionButton().label("Continue"))
 //! }
 //! ```
+//!
+//! The four loaders — [`load_theme`] (file path), [`load_theme_from_json`]
+//! (embedded JSON, e.g. `include_str!`), [`load_themes`] (directory,
+//! first file active), and [`load_themes_with_default`] (directory,
+//! specific id active) — all install the chosen theme as the thread-local
+//! active theme and provide a [`ThemeHandle`] to the subtree.
 //!
 //! For the styling engine and theme details, see
 //! [`freyacn_core::styling`] and [`freyacn_core::theme`].
@@ -158,13 +137,9 @@ pub use freyacn_core::styling::{
 #[doc(inline)]
 pub use freyacn_core::theme::{
     Appearance, ComponentState, Theme, ThemeConfig, ThemeError, ThemeHandle, ThemeInfo,
-    ThemeRegistry, active_theme, load_theme_registry, load_theme_registry_from_dir,
-    set_active_theme, use_cn_theme, use_theme, use_theme_handle,
+    ThemeRegistry, active_theme, load_theme, load_theme_from_json, load_themes,
+    load_themes_with_default, set_active_theme, use_cn_theme, use_theme, use_theme_handle,
 };
-
-/// Alias for [`load_theme_registry`] matching hook-style naming conventions.
-#[doc(inline)]
-pub use freyacn_core::theme::load_theme_registry as use_init_theme_registry;
 
 #[doc(inline)]
 pub use freyacn_core::elements::{
@@ -214,82 +189,6 @@ pub use freyacn_shadcn as shadcn;
 pub use freyacn_material3 as material3;
 
 // ---------------------------------------------------------------------
-// Feature-gated freya module re-exports
-//
-// Each line mirrors a feature in `Cargo.toml`. The RHS is the module path
-// `freyacn-core` already re-exports from `freya`. Nothing here wraps the
-// upstream module — you get whatever freya exposes, unchanged.
-// ---------------------------------------------------------------------
-
-#[cfg(feature = "freya_router")]
-#[doc(inline)]
-pub use freyacn_core::router;
-
-#[cfg(feature = "freya_i18n")]
-#[doc(inline)]
-pub use freyacn_core::i18n;
-
-#[cfg(feature = "freya_sdk")]
-#[doc(inline)]
-pub use freyacn_core::sdk;
-
-#[cfg(feature = "freya_video")]
-#[doc(inline)]
-pub use freyacn_core::video;
-
-#[cfg(feature = "freya_plot")]
-#[doc(inline)]
-pub use freyacn_core::plot;
-
-#[cfg(feature = "freya_material_design")]
-#[doc(inline)]
-pub use freyacn_core::material_design;
-
-#[cfg(feature = "freya_icons")]
-#[doc(inline)]
-pub use freyacn_core::icons;
-
-#[cfg(feature = "freya_radio")]
-#[doc(inline)]
-pub use freyacn_core::radio;
-
-#[cfg(feature = "freya_query")]
-#[doc(inline)]
-pub use freyacn_core::query;
-
-#[cfg(feature = "freya_markdown")]
-#[doc(inline)]
-pub use freyacn_core::markdown;
-
-#[cfg(feature = "freya_html")]
-#[doc(inline)]
-pub use freyacn_core::html;
-
-#[cfg(feature = "freya_borderless")]
-#[doc(inline)]
-pub use freyacn_core::borderless;
-
-#[cfg(feature = "freya_terminal")]
-#[doc(inline)]
-pub use freyacn_core::terminal;
-
-#[cfg(feature = "freya_code_editor")]
-#[doc(inline)]
-pub use freyacn_core::code_editor;
-
-#[cfg(feature = "freya_camera")]
-#[doc(inline)]
-pub use freyacn_core::camera;
-
-#[cfg(feature = "freya_web")]
-#[doc(inline)]
-pub use freyacn_core::web;
-
-#[cfg(feature = "freya_tray")]
-#[doc(inline)]
-pub use freyacn_core::tray;
-
-// ---------------------------------------------------------------------
 // Prelude
 // ---------------------------------------------------------------------
 
@@ -307,31 +206,42 @@ pub use freyacn_core::tray;
 ///
 /// - **Elements** — `div`, `text`, `p`, `image`, `icon`, `button`,
 ///   `input`, `checkbox`, `radio`, and their types.
-/// - **Styling** — `Style`, `StyledExt`, `StyledString`, `StyledColor`,
-///   `StyleVariant`, `StyleVariants`.
+/// - **Styling** — `Style`, `StyledExt`, `ThemedExt`, `StyledString`,
+///   `StyledColor`, `StyleVariant`, `StyleVariants`, `InheritedStyle`.
 /// - **Theming** — `Theme`, `ThemeRegistry`, `ThemeInfo`, `Appearance`,
-///   `use_cn_theme`, `use_init_theme_registry`.
+///   `ComponentState`, `load_theme`, `load_theme_from_json`,
+///   `load_themes`, `load_themes_with_default`, `use_cn_theme`,
+///   `use_theme`, `use_theme_handle`.
 /// - **Macros** — `#[component]`, `#[variant]`, `#[extensions]`, and
 ///   `cn!`.
 /// - **Variants** — `ComponentVariant` trait for resolving component
 ///   variants.
 /// - **Semantic events** — `HasSemanticEvents` for `.on_hover(..)` /
-///   `.on_focus(..)` and the aria-state builders (`.with_aria_invalid(..)`,
+///   `.on_focus(..)`, the aria-state builders (`.with_aria_invalid(..)`,
 ///   `.with_aria_checked(..)`, …) that drive the `aria-*:` class
-///   families.
+///   families, and the structural `has:` builders (`.with_has_svg(..)`,
+///   `.with_has_img(..)`, `.with_has_checked(..)`,
+///   `.with_has_selected(..)`, `.with_has_disabled(..)`).
 /// - **Freya plumbing** — `Element`, `Component`, `DiffKey`, event types.
+///
+/// **Not included** — import from their module paths:
+///
+/// - `styling::has` — `HasKind`, `HasFlags`, `HasContext`,
+///   `use_has_signal`, `use_has_signal_when` for element authors wiring
+///   up custom `has:` signals:
+///   ```rust,ignore
+///   use freyacn::styling::has::{HasKind, use_has_signal};
+///   ```
+/// - `base` — Freya's prelude. Import alongside this prelude when you
+///   need raw Freya primitives (`rect`, `label`, `paragraph`, `Size`,
+///   `Color`, …) mixed with FreyaCN elements. See [`base`] for the
+///   import pattern.
 ///
 /// **Feature-gated modules** (re-exported by reference, not by contents,
 /// so name collisions can't happen):
 ///
-/// - `shadcn` — shadcn/ui components.
-/// - `material3` — Material Design 3 components.
-/// - `router`, `i18n`, `sdk`, `video`, `plot`, `material_design`,
-///   `icons`, `radio`, `query`, `markdown`, `html`, `borderless`,
-///   `terminal`, `code_editor`, `camera`, `web`, `tray` — the
-///   corresponding `freya_*` features.
-///
-/// Plus `lucide` (icon set) when `freya_icons_lucide` is enabled.
+/// - `shadcn` — shadcn/ui components (`shadcn` feature).
+/// - `material3` — Material Design 3 components (`material3` feature).
 pub mod prelude {
     // ---- core ----
     #[doc(inline)]
@@ -343,7 +253,10 @@ pub mod prelude {
 
     // ---- facade-specific ----
     #[doc(inline)]
-    pub use crate::{Appearance, ThemeInfo, use_init_theme_registry};
+    pub use crate::{
+        Appearance, ThemeInfo, load_theme, load_theme_from_json, load_themes,
+        load_themes_with_default,
+    };
 
     // ---- presets (module namespace, not contents) ----
     #[cfg(feature = "shadcn")]
@@ -353,213 +266,4 @@ pub mod prelude {
     #[cfg(feature = "material3")]
     #[doc(inline)]
     pub use crate::material3;
-
-    // ---- freya features (module namespace) ----
-    #[cfg(feature = "freya_router")]
-    #[doc(inline)]
-    pub use crate::router;
-
-    #[cfg(feature = "freya_i18n")]
-    #[doc(inline)]
-    pub use crate::i18n;
-
-    #[cfg(feature = "freya_sdk")]
-    #[doc(inline)]
-    pub use crate::sdk;
-
-    #[cfg(feature = "freya_video")]
-    #[doc(inline)]
-    pub use crate::video;
-
-    #[cfg(feature = "freya_plot")]
-    #[doc(inline)]
-    pub use crate::plot;
-
-    #[cfg(feature = "freya_material_design")]
-    #[doc(inline)]
-    pub use crate::material_design;
-
-    #[cfg(feature = "freya_icons")]
-    #[doc(inline)]
-    pub use crate::icons;
-
-    #[cfg(feature = "freya_radio")]
-    #[doc(inline)]
-    pub use crate::radio;
-
-    #[cfg(feature = "freya_query")]
-    #[doc(inline)]
-    pub use crate::query;
-
-    #[cfg(feature = "freya_markdown")]
-    #[doc(inline)]
-    pub use crate::markdown;
-
-    #[cfg(feature = "freya_html")]
-    #[doc(inline)]
-    pub use crate::html;
-
-    #[cfg(feature = "freya_borderless")]
-    #[doc(inline)]
-    pub use crate::borderless;
-
-    #[cfg(feature = "freya_terminal")]
-    #[doc(inline)]
-    pub use crate::terminal;
-
-    #[cfg(feature = "freya_code_editor")]
-    #[doc(inline)]
-    pub use crate::code_editor;
-
-    #[cfg(feature = "freya_camera")]
-    #[doc(inline)]
-    pub use crate::camera;
-
-    #[cfg(feature = "freya_web")]
-    #[doc(inline)]
-    pub use crate::web;
-
-    #[cfg(feature = "freya_tray")]
-    #[doc(inline)]
-    pub use crate::tray;
-
-    // ---- Lucide icons (only when the lucide pack is enabled) ----
-    //
-    // `freyacn_core::icons` = `freya::icons`, so
-    // `freyacn_core::icons::lucide` = `freya::icons::lucide`. Routing
-    // through `freyacn_core` keeps the prelude consistent with the rest
-    // of the facade — no direct `freya::` path leaks here.
-    #[cfg(feature = "freya_icons_lucide")]
-    #[doc(inline)]
-    pub use freyacn_core::icons::lucide;
-}
-
-// ---------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::prelude::*;
-
-    #[variant]
-    #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-    pub enum TestVariant {
-        #[variant("bg-primary text-primary-foreground")]
-        #[default]
-        Default,
-        #[variant("bg-destructive text-destructive-foreground")]
-        Destructive,
-    }
-
-    #[test]
-    fn test_cn_macro() {
-        let active = true;
-        let classes = cn!(
-            "px-4 py-2",
-            if active { "bg-primary" } else { "bg-secondary" },
-            Some("rounded-md"),
-            None::<&str>,
-        );
-        assert_eq!(classes, "px-4 py-2 bg-primary rounded-md");
-    }
-
-    #[test]
-    fn test_style_builder() {
-        let s = Style::default().p_4().rounded_md().style("bg-red-500");
-        assert_eq!(s.padding.top(), 16.0);
-        assert_eq!(s.padding.bottom(), 16.0);
-        assert_eq!(s.radius.top_left(), 6.0);
-    }
-
-    #[test]
-    fn test_ring_utility() {
-        // `ring-[3px]` maps onto the border in Style. Not a true offset
-        // ring — see `freyacn_core::styling` for the caveat.
-        let s = Style::default().style("ring-[3px]");
-        let border = s.border.expect("ring-[3px] should create a border");
-        assert_eq!(border.width.top, 3.0);
-    }
-
-    #[test]
-    fn test_theme_parsing() {
-        let json = r##"{
-            "id": "test-theme",
-            "name": "Test Theme",
-            "appearance": "dark",
-            "semantic": {
-                "background": "#0b0e14",
-                "foreground": "#e6e1cf",
-                "card": "#0f141c",
-                "cardForeground": "#e6e1cf",
-                "popover": "#0f141c",
-                "popoverForeground": "#e6e1cf",
-                "primary": "#e6b450",
-                "primaryForeground": "#0b0e14",
-                "secondary": "#191f2b",
-                "secondaryForeground": "#e6e1cf",
-                "muted": "#141924",
-                "mutedForeground": "#828c99",
-                "accent": "#191f2b",
-                "accentForeground": "#e6e1cf",
-                "destructive": "#f07178",
-                "destructiveForeground": "#0b0e14",
-                "border": "#1e2430",
-                "input": "#1e2430",
-                "ring": "#e6b450"
-            }
-        }"##;
-
-        let theme = Theme::try_from_json_str(json).expect("valid theme");
-        assert_eq!(theme.id, "test-theme");
-        assert_eq!(theme.name, "Test Theme");
-        assert_eq!(theme.appearance, Appearance::Dark);
-    }
-
-    #[test]
-    fn test_variant_macro_style_str() {
-        assert_eq!(
-            TestVariant::Default.style_str(),
-            "bg-primary text-primary-foreground"
-        );
-        assert_eq!(
-            TestVariant::Destructive.style_str(),
-            "bg-destructive text-destructive-foreground"
-        );
-    }
-
-    #[test]
-    fn test_element_constructors() {
-        let _el = div().p_2().child(text("Hello, FreyaCN!"));
-    }
-
-    #[cfg(feature = "freya_icons")]
-    #[test]
-    fn test_icon_constructor() {
-        // `crate::icons` == `freyacn_core::icons` == `freya::icons`.
-        // `freya` itself is not a direct dependency of this crate — always
-        // go through the `freyacn_core` re-export (which the facade mirrors
-        // at `crate::icons` behind the same feature chain).
-        let _el = icon(crate::icons::lucide::check()).size(16.0);
-    }
-
-    // ---- Feature-gated smoke tests ----
-
-    #[cfg(feature = "shadcn")]
-    #[test]
-    fn test_shadcn_reexported() {
-        let _ = crate::shadcn::Button::default();
-    }
-
-    #[cfg(feature = "material3")]
-    #[test]
-    fn test_material3_reexported() {
-        let _ = crate::material3::FilledButton::default();
-    }
-
-    #[cfg(feature = "freya_icons_lucide")]
-    #[test]
-    fn test_lucide_reexported() {
-        let _ = crate::icons::lucide::check();
-    }
 }

@@ -1,4 +1,5 @@
 use crate::styling::apply::apply_to_rect;
+use crate::styling::has::{HasContext, HasFlags};
 use crate::styling::semantic_events::{
     HasSemanticEvents, SemanticEvents, attach_pointer_handlers, use_semantic_focus_events,
 };
@@ -33,33 +34,33 @@ use torin::prelude::Direction;
 ///
 /// ## Scrolling
 ///
-/// Freya's `Overflow` enum only has `None` and `Clip` — there is no
-/// `Overflow::Scroll`. Div fills that gap by delegating to `ScrollView`
-/// when scrolling is enabled:
+/// See [`ScrollView`] docs. `.scroll_y()` / `.scroll_x()` /
+/// `.with_scroll_controller(..)`.
 ///
-/// * `.scroll_y()` — vertical scroll, internal controller, scrollbar
-///   shown. Layout direction becomes `Vertical`.
-/// * `.scroll_x()` — horizontal scroll, internal controller, scrollbar
-///   shown. Layout direction becomes `Horizontal`.
-/// * `.with_scroll_controller(c)` — external controller for programmatic
-///   scroll (`scroll_to_x` / `scroll_to_y`). Direction falls back to
-///   `Style::direction` (or `Vertical` if unset).
-/// * `.show_scrollbar(false)` / `.hide_scrollbar()` — opt out of the
-///   scrollbar while keeping wheel/touch scrolling.
+/// ## Shadows
 ///
-/// The outer `Div`'s size constrains the scroll viewport. Without an
-/// explicit `.height(..)` (for `scroll_y`) or `.width(..)` (for
-/// `scroll_x`), the viewport sizes to content and no scroll happens.
+/// Box shadows (`.shadow_*()`) render on this `Div`'s rect via
+/// `apply_to_rect`. Text shadows (`.text_shadow_*()`) don't paint on a
+/// `Div` directly — no glyph content — but cascade into text
+/// descendants through `InheritedStyle`.
 ///
-/// ```
-/// div()
-///     .height(Size::px(200.0))
-///     .scroll_y()
-///     .children(items)
-/// ```
+/// ## Has: signaling
 ///
-/// Non-scrolling `div()`s carry no overhead — the internal
-/// `ScrollController` is created but unused.
+/// Every `Div` creates a reactive [`HasFlags`] bag and provides a
+/// [`HasContext`] to its descendants, so any child that matches a
+/// signal (an `Icon`, an `Image`, a checked checkbox, …) sets the
+/// matching flag.
+///
+/// ## A11y id override
+///
+/// By default `Div` generates its own a11y id via `use_a11y()`. A parent
+/// component that wants to own the focus target — e.g. `Input`, which
+/// needs the outer div to be the focused element so key events route
+/// there — can pass an override via `.with_a11y_id(id)`. The div's own
+/// `use_a11y()` still runs (hooks must run unconditionally), but the
+/// override replaces the id everywhere it matters: the rect's
+/// `.a11y_id(..)`, `use_focus(..)`, and the `focus_on_press` passed to
+/// `attach_pointer_handlers`.
 #[derive(PartialEq, Clone)]
 pub struct Div {
     style: Style,
@@ -72,6 +73,15 @@ pub struct Div {
     selected: bool,
     semantic_events: SemanticEvents,
     focusable_override: Option<bool>,
+
+    /// Override the auto-generated a11y id.
+    ///
+    /// When `Some`, `build_element` uses this instead of the id from
+    /// `use_a11y()`. Lets a parent component own the a11y identity of
+    /// this div — required for cases like `Input`, which needs to focus
+    /// the div when the inner paragraph (which intercepts clicks) is
+    /// pressed.
+    a11y_id_override: Option<AccessibilityId>,
 
     // Scroll config
     scroll_direction: Option<Direction>,
@@ -87,8 +97,6 @@ pub fn div() -> Div {
 impl Div {
     pub fn new() -> Self {
         Self {
-            // `Style::bare()`: this field holds user overrides only.
-            // Theme + inherited ancestor values are layered at render time.
             style: Style::bare(),
             event_handlers: EventHandlers::default(),
             children: Vec::new(),
@@ -99,6 +107,8 @@ impl Div {
             selected: false,
             semantic_events: SemanticEvents::default(),
             focusable_override: None,
+
+            a11y_id_override: None,
 
             scroll_direction: None,
             scroll_controller: None,
@@ -119,19 +129,24 @@ impl Div {
         self
     }
 
-    /// Force the focusability flag, overriding the default derivation
-    /// (which is "focusable iff a `:focus`-family variant or a focus
-    /// callback is registered"). Useful for elements that need to be
-    /// focusable without consuming any focus events — `input()` is the
-    /// canonical case.
     pub fn with_focusable(mut self, v: bool) -> Self {
         self.focusable_override = Some(v);
         self
     }
 
-    /// Replace the semantic-events bundle wholesale. Useful when a
-    /// wrapper element (e.g. `Checkbox`) owns its own `SemanticEvents`
-    /// and wants to delegate to this `Div`.
+    /// Override the a11y id used for focus and pointer handlers.
+    ///
+    /// Use this when a parent component needs to own the focus target —
+    /// for example, `Input` creates an id in its own `render` scope and
+    /// passes it here, so calling `request_focus()` on that id focuses
+    /// the div. Without the override, the div would get a *different*
+    /// auto-generated id, and the parent's focus call would target an
+    /// unrelated element.
+    pub fn with_a11y_id(mut self, id: AccessibilityId) -> Self {
+        self.a11y_id_override = Some(id);
+        self
+    }
+
     pub fn with_semantic_events(mut self, events: SemanticEvents) -> Self {
         self.semantic_events = events;
         self
@@ -139,78 +154,56 @@ impl Div {
 
     // ── scrolling ──────────────────────────────────────────────────
 
-    /// Enable vertical scrolling. Children are wrapped in a `ScrollView`
-    /// laid out vertically; a scrollbar appears when content overflows.
-    ///
-    /// The outer `Div`'s size constrains the viewport — set `.height(..)`
-    /// or `.max_height(..)` so scrolling has a bound. Without a bound,
-    /// the viewport sizes to content and no scroll happens.
-    ///
-    /// ```
-    /// div()
-    ///     .height(Size::px(200.0))
-    ///     .scroll_y()
-    ///     .children(items)
-    /// ```
     pub fn scroll_y(mut self) -> Self {
         self.scroll_direction = Some(Direction::Vertical);
         self
     }
 
-    /// Enable horizontal scrolling. Children are wrapped in a `ScrollView`
-    /// laid out horizontally; a scrollbar appears when content overflows.
-    ///
-    /// Set `.width(..)` or `.max_width(..)` so scrolling has a bound.
     pub fn scroll_x(mut self) -> Self {
         self.scroll_direction = Some(Direction::Horizontal);
         self
     }
 
-    /// Enable scrolling with an external controller for programmatic
-    /// scroll (`scroll_to_x` / `scroll_to_y`). Direction falls back to
-    /// `Style::direction` when `scroll_y()` / `scroll_x()` aren't called
-    /// explicitly, so `.direction(..)` alone also works to pick the axis.
-    ///
-    /// ```
-    /// let controller = use_scroll_controller(ScrollConfig::default);
-    /// div()
-    ///     .height(Size::px(200.0))
-    ///     .with_scroll_controller(controller)
-    ///     .children(items)
-    /// ```
     pub fn with_scroll_controller(mut self, controller: ScrollController) -> Self {
         self.scroll_controller = Some(controller);
         self
     }
 
-    /// Show a scrollbar when content overflows. Applies only when
-    /// scrolling is enabled (`scroll_y` / `scroll_x` /
-    /// `with_scroll_controller`). Defaults to `true`.
     pub fn show_scrollbar(mut self, v: bool) -> Self {
         self.show_scrollbar = v;
         self
     }
 
-    /// Hide the scrollbar while keeping wheel / touch scrolling.
-    /// Shorthand for `.show_scrollbar(false)`.
     pub fn hide_scrollbar(mut self) -> Self {
         self.show_scrollbar = false;
         self
     }
 
     pub(crate) fn build_element(&self) -> Rect {
-        // Hooks must run unconditionally. The internal controller is
-        // unused when scrolling is disabled — cheap enough to allocate
-        // per div (two `State<f32>` handles).
+        // Hooks must run unconditionally.
         let auto_scroll_controller = use_scroll_controller(ScrollConfig::default);
+
+        // `use_a11y()` is called unconditionally (hooks must run in a
+        // stable order every render). If an override is set, we use it
+        // for the div's focus tracking and pointer handlers, so the
+        // caller's `request_focus()` on that same id focuses this div.
+        let auto_a11y_id = use_a11y();
+        let a11y_id = self.a11y_id_override.unwrap_or(auto_a11y_id);
+        let focus = use_focus(a11y_id);
 
         let hovering = use_state(|| false);
         let pressing = use_state(|| false);
-        let a11y_id = use_a11y();
-        let focus = use_focus(a11y_id);
+
+        // `has:` support — reactive flag bag (hook, runs unconditionally)
+        // and context provision (hook, same HasFlags handle every render
+        // — `HasContext: PartialEq` returns `true` so no spurious re-renders).
+        let mut has_flags = HasFlags::new();
+        use_provide_context({
+            let has_flags = has_flags.clone();
+            move || HasContext(has_flags)
+        });
 
         // ── 1. Base style ───────────────────────────────────────────
-        // bare < ancestor inheritable < self.style < live variants
         let base = match try_consume_context::<InheritedStyle>() {
             Some(InheritedStyle(parent)) => parent.inheritable_subset().merge_style(&self.style),
             None => Style::default().merge_style(&self.style),
@@ -231,7 +224,7 @@ impl Div {
         let focused_kb = focus_state == Focus::Keyboard;
         let focused = matches!(focus_state, Focus::Keyboard | Focus::Pointer);
 
-        let mut live = Vec::with_capacity(12);
+        let mut live = Vec::with_capacity(16);
         if self.disabled {
             live.push(StyleVariant::Disabled);
         } else {
@@ -256,13 +249,20 @@ impl Div {
             live.push(StyleVariant::Selected);
         }
 
-        // ── aria-* state → live variants ────────────────────────────
-        // Every `aria-*:` class registered on this div (e.g.
-        // `aria-invalid:border-red-500`) only fires when the matching
-        // `StyleVariant::Aria*` is present in `live`. `AriaState` is
-        // bundled inside `SemanticEvents`, so wiring it here means
-        // `.with_aria_invalid(true)` (etc.) drives the styles.
+        // `aria-*` state → live variants
         live.extend(self.semantic_events.aria_state.active_variants());
+
+        // `has:` state → live variants
+        //
+        // Two sources:
+        // 1. Automatic signals from descendants — only read (and hence
+        //    subscribe) when the Div actually declares a `has:` variant.
+        // 2. Manual flags from `.with_has_svg(..)` etc. — always read,
+        //    cheap, no-op when empty.
+        if variants.has_any_has() {
+            live.extend(has_flags.active_variants());
+        }
+        live.extend(self.semantic_events.has_state.active_variants());
 
         let style = variants.apply_all(&live, base);
 
@@ -275,9 +275,6 @@ impl Div {
         // ── 5. Render outer box ─────────────────────────────────────
         let can_focus = !self.disabled && wants_focus;
 
-        // `a11y_id` is set unconditionally so wrapping components
-        // (Button, etc.) can attach their own role without needing a
-        // second id.
         let mut el = apply_to_rect(rect(), &style).a11y_id(a11y_id);
 
         *el.event_handlers_mut() = self.event_handlers.clone();

@@ -8,8 +8,8 @@ use freya_core::data::Overflow;
 use freya_core::layers::Layer;
 use freya_core::prelude::{
     AspectRatio, Border, BorderAlignment, BorderWidth, CornerRadius, FontFeature, FontSize,
-    FontSlant, FontWeight, FontWidth, ImageCover, LetterSpacing, SamplingMode, Scale, TextAlign,
-    TextDecoration, TextOverflow, TextShadow, TransformOrigin,
+    FontSlant, FontWeight, FontWidth, ImageCover, LetterSpacing, SamplingMode, Scale, Shadow,
+    TextAlign, TextDecoration, TextOverflow, TextShadow, TransformOrigin,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -134,18 +134,249 @@ pub trait StyledExt: Sized {
 
     /// Sets the background fill.
     ///
-    /// Accepts any [`StyledColor`] — solid colors, gradients, shaders, etc.
+    /// Accepts anything convertible into [`StyledColor`] — `StyledColor`
+    /// itself, [`Color`], [`Fill`], gradients (`LinearGradient`,
+    /// `RadialGradient`, `ConicGradient`), shaders (`ShaderFill`), render
+    /// callbacks (`RenderCallback`), and RGB/RGBA tuples. See
+    /// [`StyledColor`] for the full list.
+    ///
     /// A solid color's `.opacity(..)` is applied on conversion.
-    fn bg(mut self, color: StyledColor) -> Self {
-        self.get_style().background = color.into();
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // StyledColor — the standard shape
+    /// div().bg(blue_500())
+    ///
+    /// // Color — no `.into()` needed
+    /// div().bg(Color::from_rgb(255, 0, 0))
+    ///
+    /// // RGB tuple
+    /// div().bg((59, 130, 246))
+    ///
+    /// // Gradient
+    /// div().bg(
+    ///     LinearGradient::new()
+    ///         .stop((blue_500().into(), 0.0))
+    ///         .stop((purple_500().into(), 100.0)),
+    /// )
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use the explicit type:
+    ///
+    /// ```
+    /// div().bg(StyledColor::default())
+    /// ```
+    fn bg(mut self, color: impl Into<StyledColor>) -> Self {
+        let sc: StyledColor = color.into();
+        self.get_style().background = sc.to_fill();
         self
     }
 
     /// Sets the text (foreground) color.
     ///
-    /// Accepts any [`StyledColor`] — solid colors, gradients, shaders, etc.
-    fn text_color(mut self, color: StyledColor) -> Self {
-        self.get_style().text_color = color.into();
+    /// Accepts anything convertible into [`StyledColor`]. See [`bg`] for
+    /// the list of accepted types and examples.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// div().text_color(neutral_900())
+    /// div().text_color(Color::from_rgb(17, 24, 39))
+    /// div().text_color((17, 24, 39))
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use `StyledColor::default()` explicitly.
+    ///
+    /// [`bg`]: Self::bg
+    fn text_color(mut self, color: impl Into<StyledColor>) -> Self {
+        let sc: StyledColor = color.into();
+        self.get_style().text_color = sc.to_fill();
+        self
+    }
+
+    // ---- border ----
+
+    // ---- border ----
+
+    /// Set the border color (Tailwind `border-{color}`). Creates a
+    /// 1px border if none exists.
+    ///
+    /// Accepts anything convertible into [`StyledColor`], but — like CSS
+    /// `border-color` — the **resolved value must be solid**. Gradients,
+    /// shaders, and render callbacks panic; wrap the element in a `div()`
+    /// with a gradient `background` if you need a gradient border.
+    ///
+    /// # Accepted types
+    ///
+    /// See [`StyledColor`]'s `# Conversions` section for the full list.
+    /// The solid-returning subset is:
+    ///
+    /// - [`StyledColor`] wrapping a solid fill.
+    /// - [`Color`] — solid RGB/ARGB.
+    /// - `(u8, u8, u8)` / `(u8, u8, u8, f32)` / `(u8, u8, u8, u8)`.
+    /// - [`Fill`], but only the `Fill::Color(..)` variant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// div().border_color(gray_300())
+    /// div().border_color(Color::from_rgb(209, 213, 219))
+    /// div().border_color((209, 213, 219))
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use `StyledColor::default()` explicitly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resolved value is a gradient, shader, or callback
+    /// fill. `Border::fill` is a `Color`, so there's nowhere to store a
+    /// non-solid fill:
+    ///
+    /// ```
+    /// div().border_color(gray_300())                   // ✓
+    /// // div().border_color(LinearGradient::new())     // ✗ panics
+    /// ```
+    fn border_color(mut self, color: impl Into<StyledColor>) -> Self {
+        let sc: StyledColor = color.into();
+        let c = sc.to_color().unwrap_or_else(|| {
+            panic!("border_color requires a solid color; got a gradient/shader/callback")
+        });
+        let style = self.get_style();
+        let border = style.border.get_or_insert_with(|| Border::new().width(1.0));
+        border.fill = c;
+        self
+    }
+
+    // ---- ring ----
+
+    /// Set the ring color. Alias for [`border_color`](Self::border_color)
+    /// so shadcn class strings read literally.
+    ///
+    /// Accepts anything convertible into [`StyledColor`], but — like
+    /// `border_color` — the resolved value must be **solid**. Gradients
+    /// panic; see [`border_color`](Self::border_color#panics) for the
+    /// full constraint.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// button().ring_color(ring())
+    /// button().ring_color(Color::from_rgb(59, 130, 246))
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use `StyledColor::default()` explicitly.
+    ///
+    /// # Panics
+    ///
+    /// Same as [`border_color`](Self::border_color#panics) — panics on
+    /// non-solid fills.
+    fn ring_color(self, color: impl Into<StyledColor>) -> Self {
+        self.border_color(color)
+    }
+
+    // ---- box shadows ----
+
+    /// Recolor every currently-registered shadow.
+    ///
+    /// No-op when there are no shadows yet — Tailwind's `shadow-{color}`
+    /// utilities are always paired with a size, and the same applies here.
+    ///
+    /// Accepts anything convertible into [`StyledColor`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// div()
+    ///     .shadow_md()
+    ///     .shadow_color(blue_500())
+    ///     .shadow_color(Color::from_rgb(59, 130, 246))
+    ///     .shadow_color((59, 130, 246, 0.5))
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use `StyledColor::default()` explicitly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the argument is a gradient, shader, or callback fill —
+    /// shadow tints must be **solid**. Compose a tint from a palette
+    /// function and `.opacity(..)`:
+    ///
+    /// ```
+    /// div().shadow_md().shadow_color(black().opacity(0.2))   // ✓
+    /// // div().shadow_md().shadow_color(LinearGradient::new())   // ✗ panics
+    /// ```
+    fn shadow_color(mut self, color: impl Into<StyledColor>) -> Self {
+        let sc: StyledColor = color.into();
+        let c = sc.to_color().unwrap_or_else(|| {
+            panic!("shadow_color requires a solid color; got a gradient/shader/callback")
+        });
+        let style = self.get_style();
+        style.shadows = style.shadows.iter().map(|s| s.clone().color(c)).collect();
+        self
+    }
+
+    // ---- text shadows ----
+
+    /// Recolor every currently-registered text shadow, keeping offsets
+    /// and sigmas.
+    ///
+    /// No-op when there are no text shadows yet — Tailwind's
+    /// `text-shadow-{color}` utilities are always paired with a size,
+    /// and the same applies here.
+    ///
+    /// Accepts anything convertible into [`StyledColor`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// text("Hi")
+    ///     .text_shadow_md()
+    ///     .text_shadow_color(primary())
+    ///     .text_shadow_color(Color::from_rgb(59, 130, 246))
+    /// ```
+    ///
+    /// # Ambiguity
+    ///
+    /// `Default::default()` doesn't infer through `impl Into<StyledColor>`.
+    /// Use `StyledColor::default()` explicitly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the argument is a gradient, shader, or callback fill —
+    /// shadow tints must be **solid**. Compose a tint from a palette
+    /// function and `.opacity(..)`:
+    ///
+    /// ```
+    /// text("Hi").text_shadow_md().text_shadow_color(black().opacity(0.2))   // ✓
+    /// // text("Hi").text_shadow_md().text_shadow_color(LinearGradient::new())   // ✗ panics
+    /// ```
+    fn text_shadow_color(mut self, color: impl Into<StyledColor>) -> Self {
+        let sc: StyledColor = color.into();
+        let c = sc.to_color().unwrap_or_else(|| {
+            panic!("text_shadow_color requires a solid color; got a gradient/shader/callback")
+        });
+        let style = self.get_style();
+        style.text_shadows = style
+            .text_shadows
+            .iter()
+            .map(|s| TextShadow::new(c, s.offset, s.blur_sigma))
+            .collect();
         self
     }
 
@@ -662,56 +893,94 @@ pub trait StyledExt: Sized {
     }
 
     // ---- text shadow ----
+    //
+    // Freya's `TextShadow` takes a **blur sigma** (standard deviation),
+    // not the CSS `blur-radius` you write in `text-shadow:` shorthand.
+    // The conversion used below is the SVG spec's `sigma = radius / 2`.
+    //
+    // Presets **replace** the current `text_shadows` vector — Tailwind's
+    // `text-shadow-*` utilities set the whole `text-shadow` property, so
+    // `.text_shadow_sm().text_shadow_lg()` renders the `lg` value, not
+    // both. For manual multi-layer composition, use `.text_shadow(..)`
+    // (which appends) instead of the size presets.
 
-    /// Appends a text shadow.
+    /// Append a single text shadow. Layers accumulate, so chaining
+    /// `.text_shadow(a).text_shadow(b)` produces two shadows.
+    ///
+    /// Accepts anything `Into<TextShadow>`:
+    ///
+    /// ```
+    /// text("Hi").text_shadow(TextShadow::new(black().into(), (0.0, 2.0), 1.0))
+    /// ```
     fn text_shadow(mut self, text_shadow: impl Into<TextShadow>) -> Self {
         self.get_style().text_shadows.push(text_shadow.into());
         self
     }
 
-    /// Extra-extra-small shadow — `0 1px 0` at 15 % black.
-    fn text_shadow_2xs(self) -> Self {
-        self.text_shadow(TextShadow::new(
+    /// Remove every text shadow. Tailwind's `text-shadow-none`.
+    fn text_shadow_none(mut self) -> Self {
+        self.get_style().text_shadows.clear();
+        self
+    }
+
+    /// Extra-extra-small — `0 1px 0 rgb(0 0 0 / 0.15)`.
+    /// Tailwind's `text-shadow-2xs`.
+    fn text_shadow_2xs(mut self) -> Self {
+        self.get_style().text_shadows = vec![TextShadow::new(
             black().opacity(0.15).into(),
             (0.0, 1.0),
             0.0,
-        ))
+        )];
+        self
     }
 
-    /// Extra-small shadow — `0 1px 1px` at 15 % black.
-    fn text_shadow_xs(self) -> Self {
-        self.text_shadow(TextShadow::new(
-            black().opacity(0.15).into(),
+    /// Extra-small — `0 1px 1px rgb(0 0 0 / 0.2)`.
+    /// Tailwind's `text-shadow-xs`.
+    ///
+    /// 1px CSS blur radius → 0.5 sigma.
+    fn text_shadow_xs(mut self) -> Self {
+        self.get_style().text_shadows = vec![TextShadow::new(
+            black().opacity(0.2).into(),
             (0.0, 1.0),
-            1.0,
-        ))
+            0.5,
+        )];
+        self
     }
 
-    /// Small shadow — `0 1px 2px` at 7.5 % black.
-    fn text_shadow_sm(self) -> Self {
-        self.text_shadow(TextShadow::new(
-            black().opacity(0.075).into(),
-            (0.0, 1.0),
-            2.0,
-        ))
+    /// Small — two layers:
+    /// `0 1px 2px rgb(0 0 0 / 0.15)` and `0 1px 3px rgb(0 0 0 / 0.2)`.
+    /// Tailwind's `text-shadow-sm`.
+    fn text_shadow_sm(mut self) -> Self {
+        self.get_style().text_shadows = vec![
+            TextShadow::new(black().opacity(0.15).into(), (0.0, 1.0), 1.0),
+            TextShadow::new(black().opacity(0.2).into(), (0.0, 1.0), 1.5),
+        ];
+        self
     }
 
-    /// Medium shadow — `0 2px 4px` at 10 % black.
-    fn text_shadow_md(self) -> Self {
-        self.text_shadow(TextShadow::new(
-            black().opacity(0.1).into(),
-            (0.0, 2.0),
-            4.0,
-        ))
+    /// Medium — three layers, all at `10%` black:
+    /// `0 1px 2px`, `0 2px 4px`, `0 4px 8px`.
+    /// Tailwind's `text-shadow-md`.
+    fn text_shadow_md(mut self) -> Self {
+        self.get_style().text_shadows = vec![
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 1.0), 1.0),
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 2.0), 2.0),
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 4.0), 4.0),
+        ];
+        self
     }
 
-    /// Large shadow — `0 4px 8px` at 10 % black.
-    fn text_shadow_lg(self) -> Self {
-        self.text_shadow(TextShadow::new(
-            black().opacity(0.1).into(),
-            (0.0, 4.0),
-            8.0,
-        ))
+    /// Large — four layers, all at `10%` black:
+    /// `0 1px 2px`, `0 3px 6px`, `0 6px 12px`, `0 10px 20px`.
+    /// Tailwind's `text-shadow-lg`.
+    fn text_shadow_lg(mut self) -> Self {
+        self.get_style().text_shadows = vec![
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 1.0), 1.0),
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 3.0), 3.0),
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 6.0), 6.0),
+            TextShadow::new(black().opacity(0.1).into(), (0.0, 10.0), 10.0),
+        ];
+        self
     }
 
     // ---- text decoration ----
@@ -2276,13 +2545,130 @@ pub trait StyledExt: Sized {
         self.radius_bl(active_theme().radius_or("full", 9999.0))
     }
 
-    // ---- text extras ----
+    // ---- box shadows ----
 
-    /// Remove every text shadow previously added. Tailwind's `text-shadow-none`.
-    fn text_shadow_none(mut self) -> Self {
-        self.get_style().text_shadows.clear();
+    /// Append a single box shadow. Layers accumulate, so chaining
+    /// `.shadow(a).shadow(b)` produces a two-layer shadow (which is what
+    /// the Tailwind size presets do internally).
+    ///
+    /// Accepts anything `Into<Shadow>` — a `Shadow` from the builder, or
+    /// a `(x, y, blur, spread, color)` tuple:
+    ///
+    /// ```
+    /// div().shadow((0.0, 4.0, 8.0, 0.0, black().opacity(0.1)))
+    /// ```
+    fn shadow(mut self, shadow: impl Into<Shadow>) -> Self {
+        self.get_style().shadows.push(shadow.into());
         self
     }
+
+    /// Remove every box shadow. Tailwind's `shadow-none`.
+    fn shadow_none(mut self) -> Self {
+        self.get_style().shadows.clear();
+        self
+    }
+
+    /// Extra-extra-small — `0 1px rgb(0 0 0 / 0.05)`. Tailwind's `shadow-2xs`.
+    fn shadow_2xs(mut self) -> Self {
+        self.get_style().shadows = vec![Shadow::new().y(1.0).color(black().opacity(0.05))];
+        self
+    }
+
+    /// Extra-small — `0 1px 2px 0 rgb(0 0 0 / 0.05)`. Tailwind's `shadow-xs`.
+    fn shadow_xs(mut self) -> Self {
+        self.get_style().shadows =
+            vec![Shadow::new().y(1.0).blur(2.0).color(black().opacity(0.05))];
+        self
+    }
+
+    /// Small — two layers, `0 1px 3px` + `0 1px 2px -1px`. Tailwind's `shadow-sm`.
+    fn shadow_sm(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new().y(1.0).blur(3.0).color(black().opacity(0.1)),
+            Shadow::new()
+                .y(1.0)
+                .blur(2.0)
+                .spread(-1.0)
+                .color(black().opacity(0.1)),
+        ];
+        self
+    }
+
+    /// Medium — two layers, `0 4px 6px -1px` + `0 2px 4px -2px`. Tailwind's `shadow-md`.
+    fn shadow_md(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new()
+                .y(4.0)
+                .blur(6.0)
+                .spread(-1.0)
+                .color(black().opacity(0.1)),
+            Shadow::new()
+                .y(2.0)
+                .blur(4.0)
+                .spread(-2.0)
+                .color(black().opacity(0.1)),
+        ];
+        self
+    }
+
+    /// Large — two layers, `0 10px 15px -3px` + `0 4px 6px -4px`. Tailwind's `shadow-lg`.
+    fn shadow_lg(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new()
+                .y(10.0)
+                .blur(15.0)
+                .spread(-3.0)
+                .color(black().opacity(0.1)),
+            Shadow::new()
+                .y(4.0)
+                .blur(6.0)
+                .spread(-4.0)
+                .color(black().opacity(0.1)),
+        ];
+        self
+    }
+
+    /// Extra-large — two layers, `0 20px 25px -5px` + `0 8px 10px -6px`. Tailwind's `shadow-xl`.
+    fn shadow_xl(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new()
+                .y(20.0)
+                .blur(25.0)
+                .spread(-5.0)
+                .color(black().opacity(0.1)),
+            Shadow::new()
+                .y(8.0)
+                .blur(10.0)
+                .spread(-6.0)
+                .color(black().opacity(0.1)),
+        ];
+        self
+    }
+
+    /// 2× extra-large — `0 25px 50px -12px rgb(0 0 0 / 0.25)`. Tailwind's `shadow-2xl`.
+    fn shadow_2xl(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new()
+                .y(25.0)
+                .blur(50.0)
+                .spread(-12.0)
+                .color(black().opacity(0.25)),
+        ];
+        self
+    }
+
+    /// Inset shadow — `inset 0 2px 4px 0 rgb(0 0 0 / 0.05)`. Tailwind's `shadow-inner`.
+    fn shadow_inner(mut self) -> Self {
+        self.get_style().shadows = vec![
+            Shadow::new()
+                .y(2.0)
+                .blur(4.0)
+                .color(black().opacity(0.05))
+                .inset(),
+        ];
+        self
+    }
+
     /// Truncate overflowing content with an ellipsis. Shorthand for [`text_ellipsis`](Self::text_ellipsis) + [`overflow_clip`](Self::overflow_clip). Tailwind's `truncate`.
     fn truncate(self) -> Self {
         self.text_ellipsis().overflow_clip()
@@ -6844,11 +7230,7 @@ pub trait StyledExt: Sized {
     fn ring_0(self) -> Self {
         self.border_width(0.0)
     }
-    /// Set the ring color. Alias for `border_color` so shadcn class strings
-    /// read literally.
-    fn ring_color(self, color: StyledColor) -> Self {
-        self.border_color(color)
-    }
+
     /// Set ring color from a theme token (`"ring"`, `"destructive"`, …).
     fn ring_token(self, theme: &Theme, key: &str) -> Self {
         self.border_token(theme, key)
@@ -6986,17 +7368,6 @@ pub trait StyledExt: Sized {
             .border
             .get_or_insert_with(|| Border::new().fill(black()));
         border.width = width.into();
-        self
-    }
-
-    // ---- color ----
-
-    /// Set the border color (Tailwind `border-{color}`). Creates a
-    /// 1px border if none exists.
-    fn border_color(mut self, color: StyledColor) -> Self {
-        let style = self.get_style();
-        let border = style.border.get_or_insert_with(|| Border::new().width(1.0));
-        border.fill = color.into();
         self
     }
 
@@ -7180,7 +7551,7 @@ pub trait StyledExt: Sized {
     /// theme is dark (`theme.appearance == Appearance::Dark`).
     ///
     /// The `Dark` condition is added to the active set automatically by
-    /// [`Style::resolve_variants`](crate::styling::style::Style::resolve_variants) —
+    /// [`Style::resolve_variants`](Style::resolve_variants) —
     /// you do **not** need to pass it in the interaction flags yourself.
     ///
     /// # Precedence
@@ -7206,10 +7577,68 @@ pub trait StyledExt: Sized {
         F: Fn(Style) -> Style + Send + Sync + 'static,
     {
         let mut s = self;
-        s.get_style()
-            .variants
-            .push(StyleVariant::Dark, std::sync::Arc::new(f));
+        s.get_style().variants.push(StyleVariant::Dark, Arc::new(f));
         s
+    }
+
+    /// Patch the style when the element contains an SVG child.
+    ///
+    /// Only fires when the element's own style declares this variant and
+    /// a descendant `Icon` signals `HasKind::Svg` to the nearest
+    /// [`HasContext`]. For explicit control (no automatic tracking),
+    /// use `.with_has_svg(cond)` instead.
+    fn has_svg<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Style) -> Style + Send + Sync + 'static,
+    {
+        self.get_style()
+            .variants
+            .push(StyleVariant::HasSvg, Arc::new(f));
+        self
+    }
+
+    /// Patch the style when the element contains an Image child.
+    fn has_img<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Style) -> Style + Send + Sync + 'static,
+    {
+        self.get_style()
+            .variants
+            .push(StyleVariant::HasImg, Arc::new(f));
+        self
+    }
+
+    /// Patch the style when the element contains a checked checkbox / radio.
+    fn has_checked<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Style) -> Style + Send + Sync + 'static,
+    {
+        self.get_style()
+            .variants
+            .push(StyleVariant::HasChecked, Arc::new(f));
+        self
+    }
+
+    /// Patch the style when the element contains a selected child.
+    fn has_selected<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Style) -> Style + Send + Sync + 'static,
+    {
+        self.get_style()
+            .variants
+            .push(StyleVariant::HasSelected, Arc::new(f));
+        self
+    }
+
+    /// Patch the style when the element contains a disabled child.
+    fn has_disabled<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Style) -> Style + Send + Sync + 'static,
+    {
+        self.get_style()
+            .variants
+            .push(StyleVariant::HasDisabled, Arc::new(f));
+        self
     }
 
     fn style(self, style: impl Into<StyledString>) -> Self {

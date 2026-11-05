@@ -61,6 +61,32 @@ use std::borrow::Cow;
 /// A direct `.with_aria_disabled(true)` also disables the text for
 /// pointer-handler and focus purposes — the render body unions the aria
 /// flags into `effectively_disabled`.
+///
+/// ## Shadows
+///
+/// `Text` renders a `Label`, so the two shadow vectors on `Style` behave
+/// differently here:
+///
+/// * **Text shadows** (`Style::text_shadows`, `.text_shadow_*()`) — the
+///   common case for a text primitive. Rendered behind the glyphs via
+///   `apply_text_style` → `apply_font_lists` → `HasFontLists::add_text_shadow`.
+///   `.text_shadow_lg()` on a `Text` draws the standard Tailwind v4.1
+///   preset behind every glyph.
+/// * **Box shadows** (`Style::shadows`, `.shadow_*()`) — **not
+///   rendered**. `Label` has no box to shadow. `.shadow_md()` on a
+///   `Text` is silently dropped; wrap in a `div()` if you need one.
+///
+/// Inheritance works in the intuitive direction: text shadows set on an
+/// ancestor `Div` (or `Paragraph`) cascade into this `Text` through
+/// `InheritedStyle` via `Style::inheritable_subset`, so you can set
+/// `.text_shadow_sm()` once on a container and have every `Text` inside
+/// pick it up. Box shadows don't cascade (matching `box-shadow`), and
+/// since `Text` doesn't render them locally either, there's no box
+/// shadow path on this element at all.
+///
+/// Freya's `TextShadow::blur_sigma` is a **standard deviation**, not the
+/// CSS `blur-radius` — the presets halve the CSS radius before
+/// constructing the `TextShadow`, matching Tailwind's visual output.
 #[derive(PartialEq, Clone)]
 pub struct Text {
     content: Cow<'static, str>,
@@ -182,6 +208,11 @@ impl Component for Text {
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
 
         // ── 1. Base style ───────────────────────────────────────────
+        // `inheritable_subset` carries `text_shadows` from an ancestor
+        // (text shadows cascade in CSS) but **not** `shadows` (box
+        // shadows don't). Since `Text` doesn't render box shadows
+        // locally either, a box shadow on a `Div` ancestor correctly
+        // stops at the `Div`.
         let base = match try_consume_context::<InheritedStyle>() {
             Some(InheritedStyle(parent)) => parent.inheritable_subset().merge_style(&self.style),
             None => Style::default().merge_style(&self.style),
@@ -240,7 +271,10 @@ impl Component for Text {
 
         // ── 4. Render ───────────────────────────────────────────────
         // `Text` renders a leaf `label()`, so no `use_provide_context`
-        // for descendants — there are none to consume it.
+        // for descendants — there are none to consume it. `apply_style`
+        // routes `Style::text_shadows` through `apply_text_style` (so
+        // they render); `Style::shadows` are ignored because `Label`
+        // has no box to shadow — wrap in a `div()` if you need one.
         let mut el =
             apply_style(label().text(self.content.clone()), &style).max_lines(self.max_lines);
 
@@ -274,7 +308,11 @@ impl Component for Text {
 ///
 /// `Label` has no background, border, corner radius, direction or
 /// alignment, so those `Style` fields are ignored. Wrap the text in a
-/// `div()` for them.
+/// `div()` for them. Same for **box shadows** (`Style::shadows`) —
+/// `Label` has no box to shadow, so `.shadow_*()` on a `Text` is
+/// silently dropped. **Text shadows** (`Style::text_shadows`) *do*
+/// render: they're routed through `apply_text_style` below, which calls
+/// `apply_font_lists` and adds them via `HasFontLists::add_text_shadow`.
 fn apply_style(el: Label, s: &Style) -> Label {
     let el = el
         // box
@@ -296,7 +334,10 @@ fn apply_style(el: Label, s: &Style) -> Label {
         .backdrop_blur(s.blur)
         .layer(s.layer);
 
-    // text style — shared with paragraph.rs
+    // text style — shared with paragraph.rs. `apply_text_style` routes
+    // `s.text_shadows` through `apply_font_lists`, so text shadows are
+    // picked up here. `s.shadows` (box) are ignored — see the function
+    // doc comment above.
     let mut el = apply_text_style(el, s);
 
     // 0.0 is our "unset" value, so only override when a leading class was used.

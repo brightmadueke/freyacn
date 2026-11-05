@@ -31,8 +31,8 @@ use torin::gaps::Gaps;
 /// ## Variants
 ///
 /// All `StyleVariant`s work as on `Div` — `hover:*`, `focus:*`,
-/// `disabled:*`, and the full `aria-*` family. Because there is no
-/// `Div` in between, the aria state is pushed into the live-variant set
+/// `disabled:*`, and the full `aria-*` family. Because there is no `Div`
+/// in between, the aria state is pushed into the live-variant set
 /// directly in this component's `render`.
 ///
 /// ## Aria state
@@ -59,6 +59,39 @@ use torin::gaps::Gaps;
 /// A direct `.with_aria_disabled(true)` also disables the paragraph for
 /// pointer-handler and focus purposes — the render body unions the aria
 /// flags into `effectively_disabled`.
+///
+/// ## Shadows
+///
+/// `Paragraph` renders a `ParagraphPrimitive`, so the two shadow vectors
+/// on `Style` behave the same way they do on `Text`:
+///
+/// * **Text shadows** (`Style::text_shadows`, `.text_shadow_*()`) —
+///   rendered behind the glyphs via `apply_text_style` →
+///   `apply_font_lists` → `HasFontLists::add_text_shadow`. `.text_shadow_md()`
+///   on a `Paragraph` draws the standard Tailwind v4.1 preset behind
+///   every glyph.
+/// * **Box shadows** (`Style::shadows`, `.shadow_*()`) — **not
+///   rendered**. `ParagraphPrimitive` has no box to shadow. `.shadow_md()`
+///   on a `Paragraph` is silently dropped; wrap in a `div()` if you need
+///   one.
+///
+/// Unlike `Text`, `Paragraph` is **not a leaf** — it calls
+/// `use_provide_context(|| InheritedStyle(style.clone()))`, so text
+/// shadows set here cascade *outward* into any nested `Text` / `Paragraph`
+/// children. Combined with the inward cascade from ancestors (via
+/// `InheritedStyle` at the top of `render`), a `Paragraph` acts as a
+/// both-directions text-shadow node: set `.text_shadow_sm()` once on a
+/// container `Div` and every `Text` inside — including one nested under
+/// this `Paragraph` — picks it up.
+///
+/// Box shadows stay local in both directions: `Style::inheritable_subset`
+/// doesn't carry `shadows`, and neither `Paragraph` nor its `Text`
+/// children render them anyway, so a box shadow on a `Div` ancestor
+/// correctly stops at that `Div`.
+///
+/// Freya's `TextShadow::blur_sigma` is a **standard deviation**, not the
+/// CSS `blur-radius` — the presets halve the CSS radius before
+/// constructing the `TextShadow`, matching Tailwind's visual output.
 #[derive(PartialEq, Clone)]
 pub struct Paragraph {
     content: Vec<ParagraphContentItem>,
@@ -247,6 +280,11 @@ impl Component for Paragraph {
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
 
         // ── 1. Base style ───────────────────────────────────────────
+        // `inheritable_subset` carries `text_shadows` from an ancestor
+        // (text shadows cascade in CSS) but **not** `shadows` (box
+        // shadows don't). Since neither `Paragraph` nor its text
+        // descendants render box shadows, a box shadow on a `Div`
+        // ancestor correctly stops at that `Div`.
         let inherited = match try_consume_context::<InheritedStyle>() {
             Some(InheritedStyle(parent)) => parent.inheritable_subset(),
             None => Style::default(),
@@ -305,6 +343,11 @@ impl Component for Paragraph {
         use_semantic_focus_events(&self.semantic_events, focus_state);
 
         // ── 4. Provide to descendants ───────────────────────────────
+        // `inheritable_subset` carries `text_shadows` down to children
+        // (text shadows cascade in CSS). A `Paragraph` therefore acts as
+        // a both-directions text-shadow node: it inherits from
+        // ancestors *and* propagates to nested `Text` / `Paragraph`
+        // children. `shadows` (box) stays local at every layer.
         use_provide_context(|| InheritedStyle(style.clone()));
 
         // ── 5. Build the primitive from ordered content ─────────────
@@ -320,6 +363,10 @@ impl Component for Paragraph {
         }
 
         // ── 6. Apply style + events + a11y ──────────────────────────
+        // `apply_style` routes `Style::text_shadows` through
+        // `apply_text_style` (so they render). `Style::shadows` are
+        // ignored because `ParagraphPrimitive` has no box to shadow —
+        // wrap in a `div()` if you need one.
         let mut el = apply_style(el, &style);
 
         if let Some(h) = self.line_height {
@@ -358,6 +405,15 @@ impl Component for Paragraph {
 }
 
 /// Copies a resolved `Style` onto a `paragraph()` primitive.
+///
+/// `ParagraphPrimitive` has no background, border, corner radius,
+/// direction or alignment, so those `Style` fields are ignored. Wrap
+/// the paragraph in a `div()` for them. Same for **box shadows**
+/// (`Style::shadows`) — `ParagraphPrimitive` has no box to shadow, so
+/// `.shadow_*()` on a `Paragraph` is silently dropped. **Text shadows**
+/// (`Style::text_shadows`) *do* render: they're routed through
+/// `apply_text_style` below, which calls `apply_font_lists` and adds
+/// them via `HasFontLists::add_text_shadow`.
 fn apply_style(el: ParagraphPrimitive, s: &Style) -> ParagraphPrimitive {
     let el = el
         // box model
@@ -379,7 +435,10 @@ fn apply_style(el: ParagraphPrimitive, s: &Style) -> ParagraphPrimitive {
         .backdrop_blur(s.blur)
         .layer(s.layer);
 
-    // text style — shared with text.rs
+    // text style — shared with text.rs. `apply_text_style` routes
+    // `s.text_shadows` through `apply_font_lists`, so text shadows are
+    // picked up here. `s.shadows` (box) are ignored — see the function
+    // doc comment above.
     let mut el = apply_text_style(el, s);
 
     if s.line_height > 0.0 {

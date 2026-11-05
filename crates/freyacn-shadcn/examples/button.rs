@@ -14,7 +14,7 @@ use freya::prelude::*;
 use freyacn_core::elements::icon::icon;
 use freyacn_core::prelude::{IntoElement, div, text};
 use freyacn_core::styling::{HasSemanticEvents, StyledExt};
-use freyacn_core::theme::load_theme_registry_from_dir;
+use freyacn_core::theme::load_themes_with_default;
 use freyacn_shadcn::components::button::{Button, ButtonSize, ButtonVariant};
 
 fn main() {
@@ -22,28 +22,22 @@ fn main() {
 }
 
 fn app() -> impl IntoElement {
-    // Portable theme directory:
-    //   1. `FREYACN_THEMES_DIR` if set (env override for CI / custom layouts).
-    //   2. `<crate>/../../resources/themes/v1` otherwise — resolves to
-    //      `<workspace>/resources/themes/v1` for a crate at
-    //      `<workspace>/crates/freyacn-shadcn`.
-    let themes_dir = std::env::var("FREYACN_THEMES_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../..")
-                .join("resources/themes/v1")
-        });
-
-    // `load_theme_registry_from_dir` is itself a hook — it wraps its
+    // `load_themes_with_default` is itself a hook — it wraps its
     // internals in `use_hook`, so the directory is read once and cached
     // across re-renders. Do NOT wrap this call in another `use_hook`:
     // the outer closure would short-circuit on the second render, skip
     // the inner hooks, and Freya would panic with "Hook functions must
     // follow these rules".
-    load_theme_registry_from_dir(&themes_dir)
-        .set_active("default-dark")
-        .expect("failed to activate theme");
+    //
+    // It also activates `"default-dark"` as the initial theme in one
+    // step, avoiding a separate `.set_active(..)` call (which returns
+    // `Result` and would need `.expect(..)`). Panics if no theme in the
+    // directory has the given id — for an example, that's the right
+    // failure mode.
+    load_themes_with_default(
+        "/home/bright/RustroverProjects/freyacn/resources/themes/v1",
+        "default-dark",
+    );
 
     div()
         .style("size-full bg-background")
@@ -134,6 +128,13 @@ fn buttons_showcase() -> impl IntoElement {
                 ),
         )
         // ── Icon + label composition ────────────────────────────────
+        //
+        // The `has-[svg]:px-N` in each non-icon size variant fires on
+        // the second render after the icon mounts: the `Icon` signals
+        // `HasKind::Svg`, the `Div` re-renders with `HasSvg` in its
+        // live set, and the padding shrinks. Same visual result as
+        // shadcn's `has-[>svg]:px-N` — see `styling::has` for the
+        // mechanism and the one-frame caveat.
         .child(
             div()
                 .style("flex-col gap-3")

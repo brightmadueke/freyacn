@@ -8,6 +8,23 @@ pub enum StyleVariant {
     /// `dark:` — mode-conditional patch. Lowest priority so it acts as a
     /// base override that any interaction state can win against.
     Dark,
+
+    // ── has: family ─────────────────────────────────────────────
+    /// `has-[svg]:` — fires when the element contains an SVG child.
+    HasSvg,
+    /// `has-[img]:` — fires when the element contains an Image child.
+    HasImg,
+    /// `has-[:checked]:` — fires when the element contains a checked
+    /// checkbox / radio.
+    HasChecked,
+    /// `has-[:selected]:` — fires when the element contains a selected
+    /// child.
+    HasSelected,
+    /// `has-[:disabled]:` — fires when the element contains a disabled
+    /// child.
+    HasDisabled,
+
+    // ── interaction ─────────────────────────────────────────────
     Hover,
     Focus,
     FocusVisible,
@@ -43,6 +60,17 @@ impl StyleVariant {
     pub fn priority(self) -> u8 {
         match self {
             StyleVariant::Dark => 5,
+
+            // `has:` is a **structural** signal — lower priority than
+            // any interaction so hover / focus / active always win, but
+            // higher than `dark:` alone so a structural detail beats a
+            // pure mode override.
+            StyleVariant::HasSvg => 7,
+            StyleVariant::HasImg => 7,
+            StyleVariant::HasChecked => 7,
+            StyleVariant::HasSelected => 7,
+            StyleVariant::HasDisabled => 7,
+
             StyleVariant::Hover => 10,
             StyleVariant::Focus => 20,
             StyleVariant::FocusVisible => 30,
@@ -78,6 +106,19 @@ impl StyleVariant {
                 | StyleVariant::AriaDisabled
         )
     }
+
+    /// `true` for `has:` variants. Used by element render paths to decide
+    /// whether to provide a `HasContext` and read its flags.
+    pub fn is_has(self) -> bool {
+        matches!(
+            self,
+            StyleVariant::HasSvg
+                | StyleVariant::HasImg
+                | StyleVariant::HasChecked
+                | StyleVariant::HasSelected
+                | StyleVariant::HasDisabled
+        )
+    }
 }
 
 pub type VariantFn = Arc<dyn Fn(Style) -> Style + Send + Sync>;
@@ -98,6 +139,31 @@ impl StyleVariants {
             "StyleVariants::push_compound requires at least one condition"
         );
         self.entries.push((kinds, f));
+    }
+
+    /// Append `other`'s entries onto `self`, replacing any entry whose
+    /// condition set matches one already present.
+    ///
+    /// Used by [`Style::merge_style`](crate::styling::Style::merge_style)
+    /// so variants from the base class string, each `#[variant]` resolve,
+    /// the size patch, and the user's own style all end up live together.
+    /// A later layer still wins if it registers the same condition —
+    /// matching the fold order in `#[component]`.
+    ///
+    /// Before this existed, `merge_style` **replaced** the variant list,
+    /// so only the last non-empty pass survived. The practical
+    /// consequence: `ButtonSize::Default`'s `has-[svg]:px-3` overwrote
+    /// `ButtonVariant::Default`'s `hover:bg-primary/90`, and
+    /// `Div::build_element` saw `variants.has(Hover) == false` — so
+    /// pointer handlers were never wired and `hover:` classes never fired.
+    pub fn extend(&mut self, other: &StyleVariants) {
+        for (conds, f) in &other.entries {
+            if let Some(existing) = self.entries.iter_mut().find(|(c, _)| c == conds) {
+                existing.1 = f.clone();
+            } else {
+                self.entries.push((conds.clone(), f.clone()));
+            }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -137,6 +203,15 @@ impl StyleVariants {
         self.entries
             .iter()
             .any(|(conds, _)| conds.iter().any(|c| c.is_aria()))
+    }
+
+    /// `true` if any `has:*` variant is registered. Used by element
+    /// render paths to decide whether to create and provide a
+    /// [`HasContext`](crate::styling::has::HasContext).
+    pub fn has_any_has(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|(conds, _)| conds.iter().any(|c| c.is_has()))
     }
 }
 

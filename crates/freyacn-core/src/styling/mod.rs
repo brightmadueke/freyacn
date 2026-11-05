@@ -4,7 +4,7 @@
 //!
 //! | Layer | Item | Purpose |
 //! |---|---|---|
-//! | Data | [`Style`] | One flat struct holding every paint / typography / border / layout attribute. |
+//! | Data | [`Style`] | One flat struct holding every paint / typography / border / shadow / layout attribute. |
 //! | Builder | [`StyledExt`] | Fluent `self -> Self` methods on anything that exposes a `Style`. |
 //! | Parser | [`StyledString`] | Tailwind-style class strings that fan out into the same `Style` mutations as the builder. |
 //! | State | [`StyleVariant`] / [`StyleVariants`] | Pseudo-state patches (`:hover`, `:focus`, `aria-invalid`, …) stored *on* the style. |
@@ -18,18 +18,21 @@
 //!
 //! * [`apply`] — `Style` → primitive mapping. Three entry points:
 //!   [`apply_to_rect`](apply::apply_to_rect) copies layout / paint /
-//!   border / effects / inheritable text properties onto a `rect()`;
-//!   [`apply_text_style`](apply::apply_text_style) does the text-only
-//!   slice for any primitive implementing `TextStyleExt` (`Label`,
-//!   `Paragraph`, and future text elements); [`HasFontLists`](apply::HasFontLists)
-//!   + [`apply_font_lists`](apply::apply_font_lists) handle the
+//!   border / effects / shadows / inheritable text properties onto a
+//!   `rect()`; [`apply_text_style`](apply::apply_text_style) does the
+//!   text-only slice for any primitive implementing `TextStyleExt`
+//!   (`Label`, `Paragraph`, and future text elements);
+//!   [`HasFontLists`](apply::HasFontLists) +
+//!   [`apply_font_lists`](apply::apply_font_lists) handle the
 //!   `font_family` / `font_feature` / `text_shadow` loops that aren't
 //!   identical across primitives.
 //! * [`semantic_events`] — the shared semantic-event layer.
 //!   [`SemanticEvents`] is the callback bundle every interactive element
 //!   carries; [`HasSemanticEvents`] adds the fluent `.on_hover(..)` /
-//!   `.on_focus(..)` setters; [`attach_pointer_handlers`](semantic_events::attach_pointer_handlers)
-//!   and [`use_semantic_focus_events`](semantic_events::use_semantic_focus_events)
+//!   `.on_focus(..)` setters;
+//!   [`attach_pointer_handlers`](semantic_events::attach_pointer_handlers)
+//!   and
+//!   [`use_semantic_focus_events`](semantic_events::use_semantic_focus_events)
 //!   do the actual wiring during render.
 //!
 //! Element code imports these from their module paths; only
@@ -57,6 +60,7 @@
 //!     .border_1()
 //!     .border_color(neutral_700())
 //!     .rounded_md()
+//!     .shadow_md()
 //!     .font_semibold()
 //!     .hover(|s| s.bg(neutral_800()))
 //!     .active(|s| s.bg(neutral_950()))
@@ -65,7 +69,7 @@
 //! // …or parse a Tailwind-style string into the same struct.
 //! let s = Style::default().style(
 //!     "bg-neutral-900 text-neutral-50 px-4 py-2 border border-neutral-700 \
-//!      rounded-md font-semibold hover:bg-neutral-800 active:bg-neutral-950 \
+//!      rounded-md shadow-md font-semibold hover:bg-neutral-800 active:bg-neutral-950 \
 //!      disabled:opacity-50",
 //! );
 //! ```
@@ -98,9 +102,10 @@
 //! [`Style::inheritable_subset`](crate::styling::Style::inheritable_subset):
 //! `text_color`, `text_align`, all `font_*`, `letter_spacing`,
 //! `line_height`, `text_shadows`, `text_decoration`, `cursor`,
-//! `cursor_visible`. Everything else (`background`, `border`, `padding`,
-//! `margin`, `width`, `radius`, `variants`, …) stays local to the element
-//! that set it.
+//! `cursor_visible`. Everything else (`background`, `border`, `shadows`,
+//! `padding`, `margin`, `width`, `radius`, `variants`, …) stays local to
+//! the element that set it — box shadow and border both sit outside the
+//! inherit chain, matching CSS. Text shadow *does* cascade, matching CSS.
 //!
 //! ## Using semantic events
 //!
@@ -204,7 +209,7 @@
 //!
 //! | Helper | What it does |
 //! |---|---|
-//! | [`apply_to_rect`](apply::apply_to_rect) (or [`apply_text_style`](apply::apply_text_style)) | Copies `Style` fields onto a primitive. `apply_to_rect` also handles `Style::border` via `DecorationExt`. |
+//! | [`apply_to_rect`](apply::apply_to_rect) (or [`apply_text_style`](apply::apply_text_style)) | Copies `Style` fields onto a primitive. `apply_to_rect` also handles `Style::border` via `DecorationExt`, and `Style::shadows` / `Style::text_shadows` via `EffectExt`. |
 //! | [`attach_pointer_handlers`](semantic_events::attach_pointer_handlers) | Wires the four pointer events (`enter`, `leave`, `down`, global `up`) that drive `:hover` / `:active` and fire `.on_hover(..)` / `.on_pressed(..)`. |
 //! | [`use_semantic_focus_events`](semantic_events::use_semantic_focus_events) | Diffs focus state across renders and fires `.on_focus(..)` / `.on_blur(..)` / `.on_focus_visible(..)` exactly once per transition. |
 //!
@@ -283,7 +288,8 @@
 //! **not a true offset** — the "ring" and the "border" are the same
 //! `Border` struct, so you can't have both a visible border and a
 //! separate ring at once. If you need them independently, use a
-//! wrapper `div()`.
+//! wrapper `div()`, or (see the Shadows section) apply an offset shadow
+//! for the ring effect.
 //!
 //! The `border` **does not inherit**, so it's local to the element that
 //! set it — same rule as `padding`, `background`, and `radius`.
@@ -293,6 +299,78 @@
 //! `radio()`, `input()`, and `image()`. `text()`, `p()`, and `icon()`
 //! ignore borders — wrap in a `div()` to outline text or SVG content.
 //! See the [`crate::elements`] module docs for the full matrix.
+//!
+//! # Shadows
+//!
+//! `Style` carries two shadow vectors:
+//!
+//! * `Style::shadows: Vec<Shadow>` — **box shadows**, drawn around the
+//!   element's frame (Tailwind `shadow-*`).
+//! * `Style::text_shadows: Vec<TextShadow>` — **glyph shadows**, drawn
+//!   behind the text layer only (Tailwind `text-shadow-*`).
+//!
+//! Both are layered: entries are painted in order, and the size presets
+//! **replace** the vector while `.shadow(..)` / `.text_shadow(..)`
+//! **append** to it. That mirrors CSS — `box-shadow: a, b` renders both
+//! layers, but writing `box-shadow: a; box-shadow: b` in a stylesheet
+//! leaves only `b`. Manual multi-layer shadows therefore use the base
+//! methods:
+//!
+//! ```
+//! div()
+//!     .shadow(Shadow::new().y(2.0).blur(4.0).color(black().opacity(0.1)))
+//!     .shadow(Shadow::new().y(8.0).blur(16.0).color(black().opacity(0.05)))
+//! ```
+//!
+//! ## Box shadows
+//!
+//! | Helper | Tailwind | Effect |
+//! |---|---|---|
+//! | `.shadow(..)` | — | Append one shadow |
+//! | `.shadow_none()` | `shadow-none` | Clear the vector |
+//! | `.shadow_2xs()` / `_xs` / `_sm` / `_md` / `_lg` / `_xl` / `_2xl` | `shadow-{size}` | **Replace** with the Tailwind v4.1 preset |
+//! | `.shadow_inner()` | `shadow-inner` | **Replace** with the inset preset |
+//! | `.shadow_color(..)` | `shadow-{color}` | Recolour every layer in the vector |
+//!
+//! `shadow_color` is meant to be chained *after* a size, matching
+//! Tailwind's `shadow-{size} shadow-{color}` pairing. It's a no-op when
+//! the vector is empty.
+//!
+//! ## Text shadows
+//!
+//! | Helper | Tailwind | Effect |
+//! |---|---|---|
+//! | `.text_shadow(..)` | — | Append one shadow |
+//! | `.text_shadow_none()` | `text-shadow-none` | Clear the vector |
+//! | `.text_shadow_2xs()` / `_xs` / `_sm` / `_md` / `_lg` | `text-shadow-{size}` | **Replace** with the Tailwind v4.1 preset |
+//! | `.text_shadow_color(..)` | `text-shadow-{color}` | Recolour every layer |
+//!
+//! ## The `blur_sigma` wrinkle
+//!
+//! Freya's `TextShadow::blur_sigma` is a **standard deviation**, not the
+//! CSS `blur-radius` you write in `text-shadow:` shorthand. The SVG spec
+//! (which Skia follows) defines `sigma = radius / 2`, so the text-shadow
+//! presets halve the CSS radius before constructing the `TextShadow`.
+//! `blur_sigma` values of `0.5`, `1.0`, `1.5`, `2.0`, `3.0`, `4.0`,
+//! `6.0`, `10.0` therefore correspond to CSS radii of `1px`, `2px`,
+//! `3px`, `4px`, `6px`, `8px`, `12px`, `20px` respectively.
+//!
+//! ## Rendering
+//!
+//! Only primitives that implement `EffectExt` render box shadows, and
+//! only text primitives (`Label`, `Paragraph`) render text shadows.
+//! `apply_to_rect` walks `Style::shadows` for you when rendering a
+//! `rect()`; `apply_text_style` handles the `text_shadows` slice.
+//! `button()`, `input()`, `checkbox()`, `radio()`, and `image()` all
+//! forward `Style::shadows` to their inner `rect()` — text shadows on
+//! those same elements land on their label child, if they have one.
+//!
+//! ## Inheritance
+//!
+//! Box shadow does **not** inherit (matching CSS) — a shadowed parent
+//! does not shadow its children. Text shadow **does** inherit (also
+//! matching CSS) via `Style::inheritable_subset`. `text_shadows` is in
+//! the inheritable set; `shadows` is not.
 //!
 //! # The one invariant
 //!
@@ -382,6 +460,15 @@
 //!     .hover(|s| s.border_none())       // ✗ no-op — border stays
 //! ```
 //!
+//! Shadow vectors have the same caveat in reverse: `Style::bare()` has
+//! `shadows: vec![]` / `text_shadows: vec![]`, and every size preset
+//! writes a **non-empty** vector, so presets and `.shadow(..)` merges
+//! work cleanly. `.shadow_none()` / `.text_shadow_none()` — which write
+//! `vec![]` — hit the same "differs from bare" trap as `.border_none()`
+//! when used as a variant override. If you need to cancel a shadow
+//! inside `:hover` / `:focus`, apply an empty-layer preset or re-render
+//! the base style without the shadow.
+//!
 //! Every element that applies user-agent defaults (button, paragraph,
 //! checkbox) exposes a `no_default_style()` escape hatch so users can
 //! bypass the UA layer entirely and use their `Style` against the theme
@@ -416,6 +503,9 @@
 //!   map, then the theme's *color* map. Kebab-case and camelCase are
 //!   both accepted, so `text-primary-foreground` matches
 //!   `primaryForeground` from the theme JSON.
+//! * **Shadow utilities.** `shadow-{2xs,xs,sm,md,lg,xl,2xl,inner,none}`
+//!   and `text-shadow-{2xs,xs,sm,md,lg,none}` map to the same presets
+//!   as the fluent API. `shadow-{color}` recolours every active layer.
 //! * **`ring-*` utilities** mapped onto the border — `ring-[3px]`
 //!   becomes border width, `ring-ring/50` becomes border colour at 50 %.
 //!   See the Border section for the "not a true offset ring" caveat.
@@ -469,6 +559,12 @@
 //! **not** `b_*`. The `b_` prefix would collide visually with `bg_*`
 //! and neither matches the Tailwind spec.
 //!
+//! Shadow utilities use `shadow_*` (matching Tailwind's `shadow-*`) and
+//! `text_shadow_*` (matching Tailwind's `text-shadow-*`). The base
+//! methods `.shadow(..)` / `.text_shadow(..)` shadow the preset names
+//! by one underscore — `shadow_md()` is the preset, `shadow(..)` takes
+//! a raw `Shadow`. Same for text.
+//!
 //! # Testing
 //!
 //! Because applied styles are pure, the recommended unit-test shape is:
@@ -497,6 +593,22 @@
 //! assert!(hovered.border.as_ref().map_or(false, |b| !b.is_visible()));
 //! ```
 //!
+//! Shadows test the same way — the fields are `Vec<Shadow>` /
+//! `Vec<TextShadow>`, so compare `.len()`, iterate, or compare the
+//! whole vector (both types derive `PartialEq`):
+//!
+//! ```
+//! let base = Style::default().shadow_md();
+//! assert_eq!(base.shadows.len(), 2);  // shadow-md is two layers
+//!
+//! let hovered = applied(
+//!     base.clone(),
+//!     &[StyleVariant::Hover],
+//! );
+//! // Assuming the hover closure sets a different preset:
+//! // assert_eq!(hovered.shadows.len(), 1);
+//! ```
+//!
 //! No rendering, no signals — just function calls.
 //!
 //! # Non-goals
@@ -509,15 +621,24 @@
 //! * **Descendant / sibling combinators** — same reason.
 //! * **Transitions / animations** — a separate layer; the natural
 //!   extension point is to interpolate between two applied snapshots.
-//! * **True offset rings** — Tailwind v4's `ring-*` paints an outline
-//!   *outside* the border, on its own layer. `Style` has no separate
-//!   ring field, so the class parser maps `ring-*` onto `Style::border`
-//!   (see the Border section). Visually close for the shadcn
-//!   `focus-visible:ring-[3px] focus-visible:ring-ring/50` pattern, but
-//!   **not a true offset** — you can't have both a visible border and a
-//!   separate ring at the same time because they share the same `Border`
-//!   struct. A `box-shadow`-style ring layer that doesn't collide with
-//!   `border` is the natural future shape.
+//! * **True offset rings as `ring-*`.** Tailwind v4's `ring-*` paints
+//!   an outline *outside* the border, on its own layer. `Style::shadows`
+//!   now exists as a first-class field, so a **true ring is
+//!   implementable** — a `0 0 0 {width} {colour}` shadow reproduces the
+//!   effect precisely, and you can write it by hand today:
+//!
+//!   ```
+//!   div().shadow(
+//!       Shadow::new().spread(3.0).color(ring_color.opacity(0.5))
+//!   )
+//!   ```
+//!
+//!   `ring-*` *utilities* are still wired to `Style::border` (see the
+//!   Border section), so the class-string and fluent spellings don't
+//!   currently produce a shadow-based ring. Migrating `ring-*` to
+//!   `Style::shadows` is the natural next step; it's held back only by
+//!   the change in visual semantics for anyone relying on the current
+//!   border-based approximation.
 //!
 //! # Examples
 //!
@@ -534,6 +655,55 @@
 //!     .rounded_md()
 //!     .padding(Gaps::new(16.0, 16.0, 16.0, 16.0))
 //!     .child(text("Card content").text_color(gray_900()))
+//! ```
+//!
+//! ## Elevated card with shadow
+//!
+//! The `shadow-*` presets mirror Tailwind v4.1, so a card that "floats"
+//! is one method call:
+//!
+//! ```
+//! use freyacn::prelude::*;
+//! use torin::gaps::Gaps;
+//!
+//! div()
+//!     .bg(white())
+//!     .rounded_lg()
+//!     .shadow_lg()
+//!     .padding(Gaps::new(16.0, 16.0, 16.0, 16.0))
+//!     .child(text("Elevated"))
+//! ```
+//!
+//! ## Focus ring via shadow (true offset)
+//!
+//! `ring-*` utilities map onto `border`, which eats into padding. When
+//! you need a ring that sits *outside* the element — the way a real
+//! focus ring should — build it from a shadow instead:
+//!
+//! ```
+//! use freyacn::prelude::*;
+//! use crate::styling::colors::blue_500;
+//!
+//! button()
+//!     .rounded_md()
+//!     .focus_visible(|s| {
+//!         s.shadow(
+//!             Shadow::new()
+//!                 .spread(3.0)
+//!                 .color(blue_500().opacity(0.5)),
+//!         )
+//!     })
+//!     .child("Click me")
+//! ```
+//!
+//! ## Text shadow on a headline
+//!
+//! ```
+//! use freyacn::prelude::*;
+//!
+//! text("Above the fold")
+//!     .text_lg()
+//!     .text_shadow_sm()
 //! ```
 //!
 //! ## Focus ring via border
@@ -568,7 +738,7 @@
 //!
 //! button()
 //!     .style(
-//!         "bg-primary text-primary-foreground rounded-md \
+//!         "bg-primary text-primary-foreground rounded-md shadow-md \
 //!          focus-visible:ring-[3px] focus-visible:ring-ring/50 \
 //!          aria-invalid:border-destructive aria-invalid:ring-destructive/20",
 //!     )
@@ -593,6 +763,7 @@
 
 pub mod apply;
 pub mod colors;
+pub mod has;
 pub mod semantic_events;
 pub mod style;
 pub mod style_variants;
@@ -615,10 +786,11 @@ pub use colors::{StyledColor, black, white};
 /// The [`Style`] data struct and its `Default` impl.
 ///
 /// One flat struct covering paint, typography, interaction, effects,
-/// **border**, radius, and layout. `Default` is "unstyled": transparent
-/// background, black text, `1.0` scale, no border, zero radius / padding
-/// / margin / gap — i.e. what a bare Freya element looks like before any
-/// utility is chained.
+/// **border**, **shadows** (box + text), radius, and layout. `Default`
+/// is "unstyled": transparent background, black text, `1.0` scale, no
+/// border, empty shadow vectors, zero radius / padding / margin / gap —
+/// i.e. what a bare Freya element looks like before any utility is
+/// chained.
 ///
 /// Re-exported here so primitives can construct a base style and merge
 /// it into their own props without reaching into the `style` submodule
@@ -641,6 +813,15 @@ pub use style::*;
 /// replaces the whole `Option<Border>`; the granular helpers lazily
 /// create a `Border` if none exists yet.
 ///
+/// The **shadow** family — `.shadow_2xs()` / `_xs` / `_sm` / `_md` /
+/// `_lg` / `_xl` / `_2xl` / `_inner`, `.shadow_none()`, and
+/// `.shadow_color(..)` — mutates `Style::shadows`. The base
+/// `.shadow(..)` method appends a custom `Shadow`, while the size
+/// presets replace the whole vector (matching Tailwind's
+/// `box-shadow:` semantics). Same shape for `.text_shadow(..)` /
+/// `.text_shadow_2xs()` … `.text_shadow_lg()` / `.text_shadow_none()` /
+/// `.text_shadow_color(..)`, operating on `Style::text_shadows`.
+///
 /// The doc comment on [`styled`] carries the primitive-side recipe for
 /// applying variants per render — read that before wiring `.hover(..)`
 /// into a new element.
@@ -652,10 +833,11 @@ pub use styled::{StyledExt, ThemedExt};
 /// Tailwind utilities, pseudo-state prefixes (`hover:`, `dark:`,
 /// `aria-invalid:`, …), theme tokens (`bg-primary`,
 /// `text-primary-foreground`), arbitrary bracketed values
-/// (`w-[137px]`), and `ring-*` utilities (mapped to border under the
-/// hood), then applies them through the same [`StyledExt`] chain the
-/// fluent API uses. Use this when a class string is easier to read (or
-/// arrives from config) than the equivalent builder call.
+/// (`w-[137px]`), shadow presets (`shadow-md`, `text-shadow-lg`), and
+/// `ring-*` utilities (mapped to border under the hood), then applies
+/// them through the same [`StyledExt`] chain the fluent API uses. Use
+/// this when a class string is easier to read (or arrives from config)
+/// than the equivalent builder call.
 ///
 /// See the [`styled_string`] module docs for the full grammar and the
 /// list of unsupported constructs.
@@ -706,3 +888,7 @@ pub use style_variants::{StyleVariant, StyleVariants};
 /// during render; those aren't re-exported here because they're internal
 /// plumbing, not user-facing API.
 pub use semantic_events::{HasSemanticEvents, SemanticEvents};
+
+pub use has::{
+    HasContext, HasFlags, HasKind, try_use_has_context, use_has_signal, use_has_signal_when,
+};

@@ -1,5 +1,6 @@
 use super::div::{Div, div};
 use crate::styling::colors::{blue_600, gray_100};
+use crate::styling::has::{HasKind, use_has_signal_when};
 use crate::styling::semantic_events::{HasSemanticEvents, SemanticEvents};
 use crate::styling::{Style, StyledColor, StyledExt, white};
 use freya::components::SvgViewer;
@@ -18,87 +19,41 @@ const DEFAULT_SIZE: f32 = 16.0;
 ///
 /// ## Behavior
 ///
-/// * Controlled: reads `.with_checked(bool)`, fires `.on_checked(...)` when
-///   activated while unchecked, `.on_unchecked(...)` when activated while
-///   checked. The caller flips the prop in the handler.
-/// * Activatable via pointer, Enter, Space, and assistive technology
-///   (via `.on_all_press` on the underlying `div`).
-/// * Focusable when enabled; not focusable when disabled.
-/// * Disabled checkboxes show `CursorIcon::NotAllowed` and suppress
-///   pointer and activation callbacks.
-///
-/// ## Example
-///
-/// ```
-/// let checked = use_state(|| false);
-/// checkbox()
-///     .with_checked(*checked.read())
-///     .on_checked(move |_| checked.set(true))
-///     .on_unchecked(move |_| checked.set(false))
-/// ```
-///
-/// Variants:
-///
-/// ```
-/// use crate::styling::colors::green_600;
-/// checkbox().checked(|mut s| {
-///     s.background = green_600().into();
-///     s
-/// })
-/// ```
-///
-/// Custom icon / icon color:
-///
-/// ```
-/// checkbox().icon(text("check").font_size(12.0))
-/// checkbox().check_color(green_500())
-/// ```
+/// * Controlled: reads `.with_checked(bool)`, fires `.on_checked(...)` /
+///   `.on_unchecked(...)`. The caller flips the prop.
+/// * Activatable via pointer, Enter, Space, assistive technology.
+/// * Focusable when enabled; disabled checkboxes show `NotAllowed` and
+///   suppress pointer / activation callbacks.
 ///
 /// ## Accessibility
 ///
-/// Role is `CheckBox`. Checked state is exposed through the node's
-/// `description` (`"checked"` / `"unchecked"`) because
-/// `accesskit::Toggled` isn't reachable in the current dependency tree.
-/// The description supplements the label set via `.a11y_alt(..)`, so a
-/// custom label is preserved alongside the state.
+/// Role is `CheckBox`. Checked state is exposed via the node's
+/// `description` (`"checked"` / `"unchecked"`).
 ///
 /// ## Aria state
 ///
-/// `with_checked` and `with_disabled` mirror their native flags into the
-/// component's `AriaState`, so `aria-checked:*` / `aria-disabled:*` class
-/// strings fire alongside their native counterparts. Both class families
-/// may be used interchangeably:
-///
-/// ```
-/// checkbox()
-///     .with_checked(true)                                    // both fire
-///     .style("checked:bg-blue-600 aria-checked:bg-blue-600")
-/// ```
-///
-/// `with_aria_invalid`, `with_aria_required`, and the other aria builders
-/// from [`HasSemanticEvents`] remain available directly for states that
-/// have no native equivalent.
+/// `with_checked` / `with_disabled` mirror their native flags into the
+/// component's `AriaState`, so `aria-checked:*` / `aria-disabled:*`
+/// class strings fire alongside their native counterparts.
 ///
 /// ## Composition
 ///
-/// Built on top of `div()`. `div` owns style inheritance, pointer and
-/// focus tracking, a11y id, and variant resolution (including `:checked`
-/// via `.with_checked(..)` and `aria-checked:` via the forwarded aria
-/// state). `Checkbox` only carries UA defaults, forwards semantic events
-/// (via `Div::with_semantic_events`), and adds the activation handler +
-/// icon child.
+/// Built on top of `div()`. `Div` owns style resolution, event wiring,
+/// a11y id, variant resolution, and `has:` context.
 ///
-/// ## Reset limitation
+/// ## Shadows
 ///
-/// UA `width`, `height`, `radius`, and `cursor` cannot be reset via
-/// `.width(..)` and friends because of `merge_style`'s "differs from
-/// bare" rule. Use `.size(..)` to pick a non-default size.
+/// `Checkbox` delegates to `Div`, so box shadows work end-to-end. Text
+/// shadows cascade to any `Text` child via `InheritedStyle` — the
+/// default `SvgViewer` icon ignores them (no glyphs).
 ///
-/// ## No border field usage
+/// ## Has: signaling
 ///
-/// The box is filled rather than outlined (unchecked = `gray_100`,
-/// checked = `blue_600`). If you need a true border, wrap the checkbox
-/// in your own `div()` with `.border_*()`.
+/// Signals [`HasKind::Checked`] when checked and
+/// [`HasKind::Disabled`] when disabled, so a parent with
+/// `has-[:checked]:` / `has-[:disabled]:` styles fires when this
+/// checkbox matches. Subject to the one-frame delay and persistence
+/// caveats of [`crate::styling::has`].
 #[derive(PartialEq, Clone)]
 pub struct Checkbox {
     style: Style,
@@ -146,70 +101,38 @@ impl Checkbox {
         }
     }
 
-    // ── state ──────────────────────────────────────────────────────
-
-    /// Controlled checked state (HTML `checked`).
-    ///
-    /// Sets the native `checked` flag **and** the `aria-checked` state,
-    /// so both class families fire without extra calls:
-    ///
-    /// ```
-    /// checkbox()
-    ///     .with_checked(true)
-    ///     .style("checked:bg-blue-600 aria-checked:bg-blue-600")
-    /// ```
-    ///
-    /// Named `with_checked` so `StyledExt::checked(..)` remains callable
-    /// for styling the `:checked` variant.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self.semantic_events.aria_state.checked = v;
         self
     }
 
-    /// HTML `disabled`.
-    ///
-    /// Sets the native `disabled` flag **and** the `aria-disabled` state.
-    /// Both `disabled:*` and `aria-disabled:*` class strings fire, pointer
-    /// handlers are suppressed, and the checkbox is removed from the focus
-    /// order.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self.semantic_events.aria_state.disabled = v;
         self
     }
 
-    /// Box side length in pixels. Defaults to `16.0`.
     pub fn size(mut self, v: f32) -> Self {
         self.size = v;
         self
     }
 
-    // ── icon ───────────────────────────────────────────────────────
-
-    /// Custom icon shown when checked. Replaces the default lucide
-    /// `check` SVG.
     pub fn icon(mut self, icon: impl IntoElement) -> Self {
         self.icon = Some(icon.into_element());
         self
     }
 
-    /// Color of the default check icon. Ignored when `.icon(..)` is set.
-    /// Defaults to `white()` from the FreyaCN palette.
     pub fn check_color(mut self, color: impl Into<StyledColor>) -> Self {
         self.check_color = Some(color.into());
         self
     }
 
-    // ── activation semantics ───────────────────────────────────────
-
-    /// Fires when the box is activated while `checked == false`.
     pub fn on_checked(mut self, cb: impl Into<EventHandler<Event<PressEventData>>>) -> Self {
         self.on_checked = Some(cb.into());
         self
     }
 
-    /// Fires when the box is activated while `checked == true`.
     pub fn on_unchecked(mut self, cb: impl Into<EventHandler<Event<PressEventData>>>) -> Self {
         self.on_unchecked = Some(cb.into());
         self
@@ -252,7 +175,6 @@ impl HasSemanticEvents for Checkbox {
     }
 }
 
-/// HTML `<input type="checkbox">` user-agent defaults.
 fn checkbox_ua_style(size: f32, effectively_disabled: bool) -> Style {
     let mut style = Style::bare();
     style.width = Size::px(size);
@@ -289,14 +211,13 @@ fn default_check_icon(size: f32, color: StyledColor) -> impl IntoElement {
 
 impl Component for Checkbox {
     fn render(&self) -> impl IntoElement {
-        // Native `disabled` and `aria-disabled` are treated uniformly:
-        // either one disables the checkbox for pointer, focus, cursor,
-        // and activation purposes. `with_disabled` syncs both, but a
-        // caller using `.with_aria_disabled(true)` directly bypasses
-        // that sync, so this union keeps behaviour consistent.
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
 
-        // `div` owns style resolution, event wiring, and a11y.
+        // Signal checked / disabled state to any ancestor with
+        // `has-[:checked]:` / `has-[:disabled]:`.
+        use_has_signal_when(HasKind::Checked, self.checked);
+        use_has_signal_when(HasKind::Disabled, effectively_disabled);
+
         let mut div_el: Div = div()
             .with_checked(self.checked)
             .with_disabled(effectively_disabled)
@@ -310,25 +231,11 @@ impl Component for Checkbox {
 
         div_el = div_el.a11y_role(AccessibilityRole::CheckBox);
 
-        // `accesskit::Toggled` isn't reachable, so encode the checked
-        // state in the node's description. `set_description` supplements
-        // the label set via `.a11y_alt(..)` rather than replacing it, so
-        // a custom label is preserved alongside the state.
-        //
-        // If a direct `accesskit` dependency is added later, this
-        // collapses to `node.set_toggled(..)`:
-        //
-        //   div_el = div_el.a11y_builder(move |node| {
-        //       node.set_toggled(if was_checked { Toggled::True } else { Toggled::False });
-        //   });
         let was_checked = self.checked;
         div_el = div_el.a11y_builder(move |node| {
             node.set_description(if was_checked { "checked" } else { "unchecked" });
         });
 
-        // Activation: on_checked / on_unchecked. Gated on the combined
-        // disabled state so an aria-disabled-only checkbox behaves like
-        // a natively disabled one.
         if !effectively_disabled && (self.on_checked.is_some() || self.on_unchecked.is_some()) {
             let on_checked = self.on_checked.clone();
             let on_unchecked = self.on_unchecked.clone();
@@ -344,7 +251,6 @@ impl Component for Checkbox {
             });
         }
 
-        // Icon child when checked.
         if self.checked {
             let icon_el: Element = match &self.icon {
                 Some(el) => el.clone(),

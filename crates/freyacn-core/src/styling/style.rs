@@ -6,8 +6,8 @@ use crate::theme::{Appearance, Theme, active_theme};
 use freya_core::data::Overflow;
 use freya_core::prelude::{
     AspectRatio, Border, CornerRadius, CursorIcon, Fill, FontFeature, FontSize, FontSlant,
-    FontWeight, FontWidth, ImageCover, Layer, LetterSpacing, SamplingMode, Scale, TextAlign,
-    TextDecoration, TextOverflow, TextShadow, TransformOrigin,
+    FontWeight, FontWidth, ImageCover, Layer, LetterSpacing, SamplingMode, Scale, Shadow,
+    TextAlign, TextDecoration, TextOverflow, TextShadow, TransformOrigin,
 };
 use std::borrow::Cow;
 use torin::{
@@ -36,6 +36,9 @@ pub struct Style {
     pub line_height: f32,
     pub text_shadows: Vec<TextShadow>,
     pub text_decoration: TextDecoration,
+
+    // ---- shadows (box) ----
+    pub shadows: Vec<Shadow>,
 
     // ---- interaction ----
     pub cursor: CursorIcon,
@@ -153,6 +156,7 @@ impl Style {
             line_height: f32::default(),
             text_shadows: Vec::default(),
             text_decoration: TextDecoration::default(),
+            shadows: Vec::default(),
             cursor: CursorIcon::default(),
             cursor_visible: true,
             overflow: Overflow::default(),
@@ -354,6 +358,13 @@ impl Style {
             self.text_decoration = other.text_decoration.clone();
         }
 
+        if other.text_decoration != bare.text_decoration {
+            self.text_decoration = other.text_decoration.clone();
+        }
+        if !other.shadows.is_empty() {
+            self.shadows = other.shadows.clone();
+        }
+
         // ---- interaction ----
         if other.cursor != bare.cursor {
             self.cursor = other.cursor.clone();
@@ -467,9 +478,27 @@ impl Style {
         }
 
         // ---- variants ----
-        if other.variants != bare.variants {
-            self.variants = other.variants.clone();
-        }
+        //
+        // Accumulate rather than replace. The `#[component]` fold does:
+        //
+        //     Style::default()
+        //         .style(base_class)
+        //         .merge_style(&variant.resolve())
+        //         .merge_style(&size.resolve())
+        //         .merge_style(&user_style)
+        //
+        // Each pass contributes its own variants (`focus-visible:`,
+        // `hover:`, `has-[svg]:`, …). Replacing — the previous behaviour —
+        // wipes every earlier pass, leaving only the last non-empty list.
+        // `Div::build_element` then sees `variants.has(Hover) == false`, skips
+        // wiring pointer handlers, and `hover:` never fires.
+        //
+        // When a later pass registers the *same* condition (e.g. base sets
+        // `hover:bg-muted`, variant sets `hover:bg-primary`), the later pass
+        // wins — `StyleVariants::extend` replaces that single entry rather than
+        // appending a duplicate. That matches the fold-order precedence
+        // users expect.
+        self.variants.extend(&other.variants);
 
         self
     }

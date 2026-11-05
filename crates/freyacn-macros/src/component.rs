@@ -41,14 +41,14 @@ impl Parse for PropDecl {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let name: Ident = input.parse()?;
 
-        if name == "required" {
-            return Err(syn::Error::new_spanned(
-                &name,
-                "`required` is not a keyword. Function parameters are the only \
-                 way to declare required props: `fn Card(name: String)`. \
-                 Attribute props are optional (or defaulted with `= expr`).",
-            ));
-        }
+        // if name == "required" {
+        //     return Err(syn::Error::new_spanned(
+        //         &name,
+        //         "`required` is not a keyword. Function parameters are the only \
+        //          way to declare required props: `fn Card(name: String)`. \
+        //          Attribute props are optional (or defaulted with `= expr`).",
+        //     ));
+        // }
 
         if !input.peek(Token![:]) {
             return Err(syn::Error::new_spanned(

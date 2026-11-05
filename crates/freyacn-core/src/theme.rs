@@ -19,19 +19,28 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use freya_cn::theme::load_theme_registry;
+//! use freya::prelude::*;
+//! use freyacn_core::prelude::*;
+//! use freyacn_core::theme::load_theme;
 //!
+//! #[component]
 //! fn app() {
-//!     let handle = load_theme_registry(include_str!("../themes/dark.json"));
-//!     // ... build UI; components read the active theme automatically ...
-//!     handle.set_active("dark").unwrap();
+//!     // Load `themes/dark.json`, install it as the active theme, and
+//!     // provide a ThemeHandle to the subtree.
+//!     let _handle = load_theme("themes/dark.json");
+//!
+//!     div().child(text("Hello, FreyaCN!"))
 //! }
 //! ```
+//!
+//! For JSON embedded at compile time, use [`load_theme_from_json`] with
+//! `include_str!`. For a directory of `.json` files, use [`load_themes`]
+//! or [`load_themes_with_default`].
 //!
 //! For a non-Freya context (tests, CLI tools) use [`Theme::try_from_json_str`]:
 //!
 //! ```no_run
-//! use freya_cn::theme::Theme;
+//! use freyacn_core::theme::Theme;
 //!
 //! let theme = Theme::try_from_json_str(include_str!("../themes/light.json"))
 //!     .expect("theme should be valid");
@@ -49,10 +58,11 @@
 //! ## From a Freya component
 //!
 //! ```no_run
-//! # use freya::prelude::*;
-//! # use freya_cn::theme::{use_theme_handle, Appearance};
+//! use freya::prelude::*;
+//! use freyacn_core::prelude::*;
+//!
 //! #[component]
-//! fn ThemePicker() -> Element {
+//! fn ThemePicker() {
 //!     let handle = use_theme_handle();
 //!
 //!     // Subscribing read: re-renders when the theme changes.
@@ -61,26 +71,24 @@
 //!     // Non-subscribing list, sorted by name — perfect for a picker.
 //!     let infos = handle.theme_infos();
 //!
-//!     rsx! {
-//!         rect {
-//!             for info in infos {
-//!                 {
-//!                     let is_current = info.id == active.id;
-//!                     let id = info.id.clone();
-//!                     let handle = handle.clone();
-//!                     rsx! {
-//!                         rect {
-//!                             key: "{id}",
-//!                             onclick: move |_| { let _ = handle.set_active(&id); },
-//!                             label {
-//!                                 if is_current { "✓ {info.name}" } else { "  {info.name}" }
-//!                             }
-//!                         }
-//!                     }
-//!                 }
-//!             }
-//!         }
+//!     let mut list = div().style("flex-col gap-1");
+//!     for info in infos {
+//!         let is_current = info.id == active.id;
+//!         let label_text = format!(
+//!             "{} {}",
+//!             if is_current { "✓" } else { " " },
+//!             info.name,
+//!         );
+//!         let id = info.id.clone();
+//!         let handle = handle.clone();
+//!         list = list.child(
+//!             div()
+//!                 .style("p-2")
+//!                 .on_press(move |_| { let _ = handle.set_active(&id); })
+//!                 .child(text(label_text)),
+//!         );
 //!     }
+//!     list
 //! }
 //! ```
 //!
@@ -91,7 +99,7 @@
 //! mounts:
 //!
 //! ```no_run
-//! use freya_cn::theme::ThemeRegistry;
+//! use freyacn_core::theme::ThemeRegistry;
 //!
 //! let registry = ThemeRegistry::new();
 //! registry.load(include_str!("themes/light.json"));
@@ -261,6 +269,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use freya::prelude::*;
@@ -287,7 +296,8 @@ thread_local! {
     /// [`crate::styling::styled`] (radius, spacing, fonts, z-index, etc.).
     ///
     /// Written by [`set_active_theme`], which itself is invoked by
-    /// [`load_theme_registry`], [`load_theme_registry_from_dir`], and
+    /// [`load_theme`], [`load_theme_from_json`], [`load_themes`],
+    /// [`load_themes_with_default`], and
     /// [`ThemeHandle::set_active`] / [`ThemeHandle::reload_dir`] — you
     /// rarely need to call it directly.
     ///
@@ -311,8 +321,10 @@ thread_local! {
 ///
 /// Called automatically by:
 ///
-/// - [`load_theme_registry`] — on first render.
-/// - [`load_theme_registry_from_dir`] — on first render.
+/// - [`load_theme`] — on first render.
+/// - [`load_theme_from_json`] — on first render.
+/// - [`load_themes`] — on first render.
+/// - [`load_themes_with_default`] — on first render.
 /// - [`ThemeHandle::set_active`] — on every theme switch.
 /// - [`ThemeHandle::reload_dir`] — after re-reading the directory.
 ///
@@ -325,7 +337,7 @@ thread_local! {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use freya_cn::theme::{set_active_theme, Theme};
+/// use freyacn_core::theme::{set_active_theme, Theme};
 ///
 /// let theme = Arc::new(Theme::try_from_json_str(include_str!("theme.json")).unwrap());
 /// set_active_theme(theme);
@@ -377,7 +389,9 @@ pub fn active_theme() -> Arc<Theme> {
 /// hoist the per-shortcut `Arc::clone` out of the loop:
 ///
 /// ```no_run
-/// use freya_cn::theme::with_active_theme;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::with_active_theme;
 ///
 /// fn render_list(items: Vec<String>) -> impl IntoElement {
 ///     with_active_theme(|theme| {
@@ -428,7 +442,7 @@ pub fn with_active_theme<R>(f: impl FnOnce(&Theme) -> R) -> R {
 /// # Example
 ///
 /// ```no_run
-/// use freya_cn::theme::{Theme, ThemeError};
+/// use freyacn_core::theme::{Theme, ThemeError};
 ///
 /// match Theme::try_from_json_str(r#"{ "id": "x" }"#) {
 ///     Err(ThemeError::Json(e)) => eprintln!("bad json: {e}"),
@@ -566,7 +580,7 @@ pub enum Appearance {
 /// struct with public fields:
 ///
 /// ```
-/// use freya_cn::theme::{Appearance, ThemeInfo};
+/// use freyacn_core::theme::{Appearance, ThemeInfo};
 ///
 /// let info = ThemeInfo {
 ///     id: "default-dark".into(),
@@ -583,7 +597,7 @@ pub enum Appearance {
 /// colours, tokens, and component themes are **not** cloned:
 ///
 /// ```no_run
-/// # use freya_cn::theme::Theme;
+/// # use freyacn_core::theme::Theme;
 /// # let theme = Theme::try_from_json_str("{}").unwrap();
 /// let info = theme.metadata();
 /// assert_eq!(info.id, theme.id);
@@ -598,7 +612,7 @@ pub enum Appearance {
 /// without parsing the full theme:
 ///
 /// ```
-/// # use freya_cn::theme::{Appearance, ThemeInfo};
+/// # use freyacn_core::theme::{Appearance, ThemeInfo};
 /// let info = ThemeInfo {
 ///     id: "default-dark".into(),
 ///     name: "FreyaCN Dark".into(),
@@ -615,9 +629,9 @@ pub enum Appearance {
 /// [`ThemeHandle::set_active`]:
 ///
 /// ```no_run
-/// # use freya_cn::theme::ThemeHandle;
+/// # use freyacn_core::theme::ThemeHandle;
 /// # let handle: ThemeHandle = todo!();
-/// # let saved_info: freya_cn::theme::ThemeInfo = todo!();
+/// # let saved_info: freyacn_core::theme::ThemeInfo = todo!();
 /// if handle.contains(&saved_info.id) {
 ///     handle.set_active(&saved_info.id).unwrap();
 /// }
@@ -628,7 +642,7 @@ pub enum Appearance {
 /// The typical shape:
 ///
 /// ```no_run
-/// # use freya_cn::theme::{ThemeHandle, ThemeInfo};
+/// # use freyacn_core::theme::{ThemeHandle, ThemeInfo};
 /// fn render_picker(handle: &ThemeHandle) -> Vec<String> {
 ///     let active = handle.active_info();
 ///     handle
@@ -637,8 +651,8 @@ pub enum Appearance {
 ///         .map(|info| {
 ///             let marker = if info.id == active.id { "✓" } else { " " };
 ///             let icon = match info.appearance {
-///                 freya_cn::theme::Appearance::Light => "☀",
-///                 freya_cn::theme::Appearance::Dark => "☾",
+///                 freyacn_core::theme::Appearance::Light => "☀",
+///                 freyacn_core::theme::Appearance::Dark => "☾",
 ///             };
 ///             format!("{marker} {icon} {} ({})", info.name, info.id)
 ///         })
@@ -1306,7 +1320,7 @@ const CONTRAST_PAIRS: &[(&str, &str)] = &[
 /// # Example
 ///
 /// ```no_run
-/// # use freya_cn::theme::Theme;
+/// # use freyacn_core::theme::Theme;
 /// # let theme = Theme::try_from_json_str("{}").unwrap();
 /// if let Some(tok) = theme.token("button.primary.background") {
 ///     // Solid callers: tok.color
@@ -1329,7 +1343,7 @@ pub struct ThemeToken {
 /// # Example
 ///
 /// ```no_run
-/// # use freya_cn::theme::Theme;
+/// # use freyacn_core::theme::Theme;
 /// # let theme = Theme::try_from_json_str("{}").unwrap();
 /// let row_hover = theme.list.row_hover.clone();
 /// let row_h = theme.list.row_height;
@@ -1502,7 +1516,7 @@ impl TableTheme {
 /// # Example
 ///
 /// ```no_run
-/// use freya_cn::theme::{Theme, ComponentState};
+/// use freyacn_core::theme::{Theme, ComponentState};
 ///
 /// let theme = Theme::try_from_json_str(include_str!("theme.json")).unwrap();
 ///
@@ -1567,7 +1581,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// use freya_cn::theme::Theme;
+    /// use freyacn_core::theme::Theme;
     ///
     /// let theme = Theme::from_json_str(include_str!("theme.json"));
     /// let fg = theme.foreground();
@@ -1581,7 +1595,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// use freya_cn::theme::Theme;
+    /// use freyacn_core::theme::Theme;
     ///
     /// match Theme::try_from_json_str(include_str!("theme.json")) {
     ///     Ok(theme) => println!("loaded {}", theme.name),
@@ -1662,7 +1676,7 @@ impl Theme {
     /// # Example — build a picker entry
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// let info = theme.metadata();
     ///
@@ -1672,8 +1686,8 @@ impl Theme {
     /// println!("Author:   {}", info.author.as_deref().unwrap_or("(none)"));
     ///
     /// let appearance = match info.appearance {
-    ///     freya_cn::theme::Appearance::Light => "light",
-    ///     freya_cn::theme::Appearance::Dark => "dark",
+    ///     freyacn_core::theme::Appearance::Light => "light",
+    ///     freyacn_core::theme::Appearance::Dark => "dark",
     /// };
     /// println!("Mode:     {appearance}");
     /// ```
@@ -1681,7 +1695,7 @@ impl Theme {
     /// # Example — round-trip through `ThemeInfo`
     ///
     /// ```no_run
-    /// # use freya_cn::theme::{Appearance, Theme, ThemeInfo};
+    /// # use freyacn_core::theme::{Appearance, Theme, ThemeInfo};
     /// # let theme = Theme::try_from_json_str(r#"{"id":"x","name":"X","appearance":"dark","semantic":{}}"#).unwrap();
     /// let info: ThemeInfo = theme.metadata();
     /// assert_eq!(info.id, theme.id);
@@ -1692,7 +1706,7 @@ impl Theme {
     /// # Example — compare two themes by metadata
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let a = Theme::try_from_json_str("{}").unwrap();
     /// # let b = Theme::try_from_json_str("{}").unwrap();
     /// let same_mode = a.metadata().appearance == b.metadata().appearance;
@@ -1713,7 +1727,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// if let Some(fill) = theme.fill("primary") {
     ///     // paint something
@@ -1743,7 +1757,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// if let Some(fill) = theme.token_fill("button.primary.background") {
     ///     // paint something
@@ -1883,7 +1897,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// let raw = theme.component("button.primary.background");
     /// if let Some(v) = raw {
@@ -1909,7 +1923,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// if let Some(fg) = theme.component_color("button.primary.foreground") {
     ///     // use as text colour
@@ -1937,7 +1951,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// if let Some(bg) = theme.component_fill("button.primary.background") {
     ///     // paint as background
@@ -2017,7 +2031,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::{Theme, ComponentState};
+    /// # use freyacn_core::theme::{Theme, ComponentState};
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// let hover = theme.state_fill("button.primary", ComponentState::Hover, "background");
     /// let pressed = theme.state_fill("button.primary", ComponentState::Pressed, "background");
@@ -2094,7 +2108,7 @@ impl Theme {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::Theme;
+    /// # use freyacn_core::theme::Theme;
     /// # let theme = Theme::try_from_json_str("{}").unwrap();
     /// for warning in theme.validate() {
     ///     eprintln!("theme warning: {warning}");
@@ -3026,11 +3040,11 @@ fn resolve_semantic_map(
 
 /// In-memory store of loaded themes, keyed by their `id`.
 ///
-/// Usually created and managed by [`load_theme_registry`] /
-/// [`load_theme_registry_from_dir`], which also install the initial
-/// theme and provide a [`ThemeHandle`] to Freya's context. Use
-/// `ThemeRegistry` directly for testing, CLI tooling, or custom app
-/// wiring.
+/// Usually created and managed by [`load_theme`] /
+/// [`load_theme_from_json`] / [`load_themes`] /
+/// [`load_themes_with_default`], which also install the initial theme and
+/// provide a [`ThemeHandle`] to Freya's context. Use `ThemeRegistry`
+/// directly for testing, CLI tooling, or custom app wiring.
 ///
 /// # Discovery
 ///
@@ -3044,8 +3058,7 @@ fn resolve_semantic_map(
 /// # Example
 ///
 /// ```no_run
-/// use std::path::Path;
-/// use freya_cn::theme::ThemeRegistry;
+/// use freyacn_core::theme::ThemeRegistry;
 ///
 /// let registry = ThemeRegistry::new();
 /// registry.load(include_str!("theme.json"));
@@ -3084,7 +3097,7 @@ impl ThemeRegistry {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let registry = ThemeRegistry::new();
     /// registry.load(include_str!("themes/dark.json"));
     /// ```
@@ -3120,26 +3133,28 @@ impl ThemeRegistry {
     /// Load every `.json` in `dir`. **Panics** on I/O errors or any
     /// unknown token in any file.
     ///
-    /// Files are loaded in filesystem order; the first one becomes active
-    /// if the registry was empty. Non-`.json` files are ignored.
+    /// `dir` accepts anything that converts to a `Path`: `&str`,
+    /// `String`, `&Path`, `PathBuf`. Files are loaded in filesystem
+    /// order; the first one becomes active if the registry was empty.
+    /// Non-`.json` files are ignored.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let registry = ThemeRegistry::new();
-    /// let n = registry.load_dir(std::path::Path::new("themes"));
+    /// let n = registry.load_dir("themes");
     /// println!("loaded {n} themes");
     /// ```
-    pub fn load_dir(&self, dir: &std::path::Path) -> usize {
+    pub fn load_dir(&self, dir: impl AsRef<Path>) -> usize {
         self.try_load_dir(dir)
             .unwrap_or_else(|e| panic!("failed to load theme directory: {e}"))
     }
 
     /// Non-panicking variant of [`load_dir`](Self::load_dir).
-    pub fn try_load_dir(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+    pub fn try_load_dir(&self, dir: impl AsRef<Path>) -> Result<usize, ThemeError> {
         let mut count = 0usize;
-        for entry in std::fs::read_dir(dir)? {
+        for entry in std::fs::read_dir(dir.as_ref())? {
             let path = entry?.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 let s = std::fs::read_to_string(&path)?;
@@ -3158,13 +3173,13 @@ impl ThemeRegistry {
     /// need to prune). Uses the same semantics as
     /// [`load_dir`](Self::load_dir), so hot-reload in a running app is
     /// supported via [`ThemeHandle::reload_dir`].
-    pub fn reload_dir(&self, dir: &std::path::Path) -> usize {
+    pub fn reload_dir(&self, dir: impl AsRef<Path>) -> usize {
         self.try_reload_dir(dir)
             .unwrap_or_else(|e| panic!("failed to reload theme directory: {e}"))
     }
 
     /// Non-panicking variant of [`reload_dir`](Self::reload_dir).
-    pub fn try_reload_dir(&self, dir: &std::path::Path) -> Result<usize, ThemeError> {
+    pub fn try_reload_dir(&self, dir: impl AsRef<Path>) -> Result<usize, ThemeError> {
         self.try_load_dir(dir)
     }
 
@@ -3229,7 +3244,7 @@ impl ThemeRegistry {
     /// # Example — empty vs populated
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let reg = ThemeRegistry::new();
     /// assert_eq!(reg.len(), 0);
     ///
@@ -3243,7 +3258,7 @@ impl ThemeRegistry {
     /// # Example — guard against empty pickers
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// if reg.len() == 0 {
     ///     eprintln!("warning: no themes loaded, UI will use fallback colours");
@@ -3258,7 +3273,7 @@ impl ThemeRegistry {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let mut_hint = ThemeRegistry::new();
     /// assert!(mut_hint.is_empty());
     ///
@@ -3280,7 +3295,7 @@ impl ThemeRegistry {
     /// # Example — validate before switching
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// // `set_active` would error on unknown IDs anyway, but this lets
     /// // you avoid the error path (and the `Arc<Theme>` clone inside).
@@ -3292,7 +3307,7 @@ impl ThemeRegistry {
     /// # Example — guard a reload that skips the current theme
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// # let user_id = "user-custom";
     /// if !reg.contains(user_id) {
@@ -3316,7 +3331,7 @@ impl ThemeRegistry {
     /// # Example — inspect the registry without Freya
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let reg = ThemeRegistry::new();
     /// reg.load(include_str!("themes/light.json"));
     /// reg.load(include_str!("themes/dark.json"));
@@ -3331,7 +3346,7 @@ impl ThemeRegistry {
     /// # Example — persist the current ID before exiting
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// if let Some(id) = reg.active_id() {
     ///     std::fs::write("last-theme.txt", id).ok();
@@ -3349,7 +3364,7 @@ impl ThemeRegistry {
     /// # Example — single lookup
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let reg = ThemeRegistry::new();
     /// reg.load(include_str!("themes/light.json"));
     ///
@@ -3361,7 +3376,7 @@ impl ThemeRegistry {
     /// # Example — avoid a full theme clone in a list
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// // BAD: clones the entire resolved theme (semantic map, colors,
     /// // components JSON, …) just to print its name.
@@ -3388,7 +3403,7 @@ impl ThemeRegistry {
     /// # Example — print a sorted list
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// let reg = ThemeRegistry::new();
     /// reg.load(include_str!("themes/light.json"));
     /// reg.load(include_str!("themes/dark.json"));
@@ -3403,7 +3418,7 @@ impl ThemeRegistry {
     /// # Example — filter by appearance
     ///
     /// ```no_run
-    /// # use freya_cn::theme::{Appearance, ThemeRegistry};
+    /// # use freyacn_core::theme::{Appearance, ThemeRegistry};
     /// # let reg = ThemeRegistry::new();
     /// let dark_themes: Vec<_> = reg
     ///     .info_list()
@@ -3415,7 +3430,7 @@ impl ThemeRegistry {
     /// # Example — search by name (case-insensitive substring)
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// # let query = "dark";
     /// let needle = query.to_lowercase();
@@ -3429,7 +3444,7 @@ impl ThemeRegistry {
     /// # Example — build a display label
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// let labels: Vec<String> = reg
     ///     .info_list()
@@ -3457,7 +3472,7 @@ impl ThemeRegistry {
     /// # Example — status line
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// match reg.active_info() {
     ///     Some(info) => println!("Active: {} ({:?})", info.name, info.appearance),
@@ -3468,7 +3483,7 @@ impl ThemeRegistry {
     /// # Example — persist on switch
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeRegistry;
+    /// # use freyacn_core::theme::ThemeRegistry;
     /// # let reg = ThemeRegistry::new();
     /// reg.set_active("default-dark").unwrap();
     /// if let Some(info) = reg.active_info() {
@@ -3496,12 +3511,15 @@ impl ThemeRegistry {
 
     /// Build a registry from a directory. **Panics** on I/O errors or any
     /// unknown token.
-    pub fn from_dir(dir: &std::path::Path) -> Self {
+    ///
+    /// `dir` accepts anything that converts to a `Path`: `&str`,
+    /// `String`, `&Path`, `PathBuf`.
+    pub fn from_dir(dir: impl AsRef<Path>) -> Self {
         Self::try_from_dir(dir).unwrap_or_else(|e| panic!("failed to load theme directory: {e}"))
     }
 
     /// Non-panicking variant of [`from_dir`](Self::from_dir).
-    pub fn try_from_dir(dir: &std::path::Path) -> Result<Self, ThemeError> {
+    pub fn try_from_dir(dir: impl AsRef<Path>) -> Result<Self, ThemeError> {
         let registry = Self::new();
         registry.try_load_dir(dir)?;
         Ok(registry)
@@ -3524,7 +3542,7 @@ impl ThemeRegistry {
     }
 
     /// Alias for [`reload_dir`](Self::reload_dir).
-    pub fn reload(&self, dir: &std::path::Path) -> usize {
+    pub fn reload(&self, dir: impl AsRef<Path>) -> usize {
         self.reload_dir(dir)
     }
 }
@@ -3535,8 +3553,9 @@ impl ThemeRegistry {
 
 /// Reactive handle to the currently-active theme.
 ///
-/// Returned by [`load_theme_registry`] / [`load_theme_registry_from_dir`]
-/// and provided into Freya's context so descendants can reach it via
+/// Returned by [`load_theme`] / [`load_theme_from_json`] /
+/// [`load_themes`] / [`load_themes_with_default`] and provided into
+/// Freya's context so descendants can reach it via
 /// [`use_theme_handle`]. Combines:
 ///
 /// - [`registry`](Self::registry) — the full set of loaded themes.
@@ -3554,17 +3573,16 @@ impl ThemeRegistry {
 /// # Example
 ///
 /// ```no_run
-/// # use freya_cn::theme::*;
-/// # use freya::prelude::*;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::load_theme;
+///
 /// #[component]
-/// fn App() -> Element {
-///     let handle = load_theme_registry(include_str!("themes/light.json"));
-///     rsx! {
-///         button {
-///             onclick: move |_| { let _ = handle.set_active("dark"); },
-///             "Switch to dark"
-///         }
-///     }
+/// fn App() {
+///     let handle = load_theme("themes/light.json");
+///     button()
+///         .on_press(move |_| { let _ = handle.set_active("dark"); })
+///         .child(text("Switch to dark"))
 /// }
 /// ```
 #[derive(Clone)]
@@ -3601,6 +3619,9 @@ impl ThemeHandle {
 
     /// Re-read every `.json` in `dir` and refresh the active theme.
     ///
+    /// `dir` accepts anything that converts to a `Path`: `&str`,
+    /// `String`, `&Path`, `PathBuf`.
+    ///
     /// New files are added, existing IDs are overwritten, removed files
     /// are **not** pruned. If the active theme's ID disappears, the
     /// existing state remains pointed at the old (in-memory) version.
@@ -3611,13 +3632,13 @@ impl ThemeHandle {
     /// # Example
     ///
     /// ```no_run
-    /// # use freya_cn::theme::*;
+    /// # use freyacn_core::theme::*;
     /// # let handle: ThemeHandle = todo!();
-    /// let n = handle.reload_dir(std::path::Path::new("themes"));
+    /// let n = handle.reload_dir("themes");
     /// println!("reloaded {n} themes");
     /// ```
-    pub fn reload_dir(&self, dir: &std::path::Path) -> usize {
-        let n = self.registry.reload_dir(dir);
+    pub fn reload_dir(&self, dir: impl AsRef<Path>) -> usize {
+        let n = self.registry.reload_dir(dir.as_ref());
         let prev_id = self.active.read().id.clone();
         if let Some(t) = self.registry.get(&prev_id) {
             set_active_theme(t.clone());
@@ -3640,7 +3661,7 @@ impl ThemeHandle {
     /// # Example — read resolved colours
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let theme = handle.current();
     /// let bg = theme.background_fill();
@@ -3652,7 +3673,7 @@ impl ThemeHandle {
     /// # Example — branch on appearance
     ///
     /// ```no_run
-    /// # use freya_cn::theme::{Appearance, ThemeHandle};
+    /// # use freyacn_core::theme::{Appearance, ThemeHandle};
     /// # let handle: ThemeHandle = todo!();
     /// let icon = match handle.current().appearance {
     ///     Appearance::Light => "☀",
@@ -3663,7 +3684,7 @@ impl ThemeHandle {
     /// # Example — trigger re-render on switch
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// fn render_label(handle: &ThemeHandle) -> String {
     ///     // Subscribes — the calling component re-renders whenever
     ///     // `set_active` changes the theme.
@@ -3685,7 +3706,7 @@ impl ThemeHandle {
     /// # Example — show the current ID
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// println!("Now showing: {}", handle.active_id());
     /// ```
@@ -3693,7 +3714,7 @@ impl ThemeHandle {
     /// # Example — conditional rendering
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// if handle.active_id() == "default-dark" {
     ///     // render the sun icon (to switch back to light)
@@ -3712,7 +3733,7 @@ impl ThemeHandle {
     /// # Example — picker with checkmark
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let active = handle.active_info();
     ///
@@ -3729,7 +3750,7 @@ impl ThemeHandle {
     /// # Example — status bar text
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let info = handle.active_info();
     /// println!("Theme: {} v{}", info.name, info.version);
@@ -3746,7 +3767,7 @@ impl ThemeHandle {
     /// # Example — checkmark per entry
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// for info in handle.theme_infos() {
     ///     let marker = if handle.is_active(&info.id) { "●" } else { "○" };
@@ -3757,7 +3778,7 @@ impl ThemeHandle {
     /// # Example — conditional styling
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// # let id = "default-dark";
     /// let bg = if handle.is_active(id) {
@@ -3784,7 +3805,7 @@ impl ThemeHandle {
     /// # Example — access resolved tokens for all themes
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// for theme in handle.themes() {
     ///     // Full resolved theme — can read `.primary()`, `.list.row_hover`, …
@@ -3795,7 +3816,7 @@ impl ThemeHandle {
     /// # Example — filter by semantic token value
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let dark_by_bg: Vec<_> = handle
     ///     .themes()
@@ -3807,7 +3828,7 @@ impl ThemeHandle {
     /// # Example — avoid when you only need metadata
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// // BAD: clones the entire resolved theme per entry.
     /// for theme in handle.themes() {
@@ -3836,7 +3857,7 @@ impl ThemeHandle {
     /// # Example — full picker render
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// fn render_picker(handle: &ThemeHandle) -> Vec<String> {
     ///     // Subscribing read for re-renders on switch.
     ///     let active = handle.active_info();
@@ -3856,7 +3877,7 @@ impl ThemeHandle {
     /// # Example — count by appearance
     ///
     /// ```no_run
-    /// # use freya_cn::theme::{Appearance, ThemeHandle};
+    /// # use freyacn_core::theme::{Appearance, ThemeHandle};
     /// # let handle: ThemeHandle = todo!();
     /// let dark = handle
     ///     .theme_infos()
@@ -3869,7 +3890,7 @@ impl ThemeHandle {
     /// # Example — search input
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// # let query = "solarized";
     /// let needle = query.to_lowercase();
@@ -3894,7 +3915,7 @@ impl ThemeHandle {
     /// # Example — feed a native `<select>`
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let options: Vec<(String, String)> = handle
     ///     .theme_ids()
@@ -3909,7 +3930,7 @@ impl ThemeHandle {
     /// # Example — check whether every file in a directory loaded
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let loaded: std::collections::HashSet<_> = handle.theme_ids().into_iter().collect();
     /// for expected in ["default-light", "default-dark"] {
@@ -3928,7 +3949,7 @@ impl ThemeHandle {
     /// # Example — tooltip content
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// # let id = "default-dark";
     /// if let Some(info) = handle.theme_info(id) {
@@ -3943,7 +3964,7 @@ impl ThemeHandle {
     /// # Example — validate a saved preference
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// # let saved_id = "user-custom";
     /// if handle.theme_info(saved_id).is_none() {
@@ -3959,7 +3980,7 @@ impl ThemeHandle {
     /// # Example — safe switch
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// # let user_input = "default-dark";
     /// if handle.contains(user_input) {
@@ -3977,7 +3998,7 @@ impl ThemeHandle {
     /// # Example — show a badge
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// let count = handle.theme_count();
     /// println!("{count} theme(s) available");
@@ -3991,10 +4012,10 @@ impl ThemeHandle {
     /// # Example — guard the picker
     ///
     /// ```no_run
-    /// # use freya_cn::theme::ThemeHandle;
+    /// # use freyacn_core::theme::ThemeHandle;
     /// # let handle: ThemeHandle = todo!();
     /// if handle.is_empty() {
-    ///     eprintln!("no themes loaded — install at least one via load_theme_registry");
+    ///     eprintln!("no themes loaded — install at least one via load_theme / load_themes");
     /// }
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -4002,31 +4023,91 @@ impl ThemeHandle {
     }
 }
 
-/// Load a theme from a JSON string and install it as the app's active
+/// Load a theme from a JSON file and install it as the app's active
 /// theme.
+///
+/// `path` accepts anything that converts to a `Path`: `&str`, `String`,
+/// `&Path`, `PathBuf`. The file is read from disk, parsed, and installed
+/// as the thread-local active theme.
 ///
 /// Must be called inside a Freya component — uses [`use_hook`] so the
 /// registry and state survive re-renders. Subsequent calls to
 /// [`use_cn_theme`] / [`use_theme`] pick up the active theme.
 ///
-/// Also provides both `State<Arc<Theme>>` and [`ThemeHandle`] into
-/// Freya's context, so descendants can call [`use_theme_handle`] to
-/// reach the registry (theme pickers, settings panels, …).
+/// Provides both `State<Arc<Theme>>` and [`ThemeHandle`] into Freya's
+/// context, so descendants can call [`use_theme_handle`].
+///
+/// **Panics** on I/O errors, malformed JSON, or any unknown token.
+///
+/// # Example
+///
+/// ```no_run
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::load_theme;
+///
+/// #[component]
+/// fn App() {
+///     let handle = load_theme("themes/light.json");
+///     div().child(text("Hello, FreyaCN!"))
+/// }
+/// ```
+///
+/// # Embedded JSON
+///
+/// If your theme JSON is embedded in the binary (via `include_str!`),
+/// use [`load_theme_from_json`] instead — it takes the JSON content
+/// directly and skips the filesystem.
+pub fn load_theme(path: impl AsRef<Path>) -> ThemeHandle {
+    use_hook(|| {
+        let registry = Arc::new(ThemeRegistry::new());
+        let json = std::fs::read_to_string(path.as_ref()).unwrap_or_else(|e| {
+            panic!(
+                "failed to read theme file `{}`: {e}",
+                path.as_ref().display()
+            )
+        });
+        let theme = registry.load(&json);
+        set_active_theme(theme.clone());
+        let active = State::create(theme);
+        provide_context(active);
+
+        let handle = ThemeHandle { registry, active };
+        provide_context(handle.clone());
+        handle
+    })
+}
+
+/// Load a theme from a JSON string and install it as the app's active
+/// theme.
+///
+/// Use this when the JSON is embedded at compile time (via `include_str!`)
+/// or has already been read into memory. For a file on disk, use
+/// [`load_theme`] instead.
+///
+/// Must be called inside a Freya component — uses [`use_hook`] so the
+/// registry and state survive re-renders. Subsequent calls to
+/// [`use_cn_theme`] / [`use_theme`] pick up the active theme.
+///
+/// Provides both `State<Arc<Theme>>` and [`ThemeHandle`] into Freya's
+/// context, so descendants can call [`use_theme_handle`].
 ///
 /// **Panics** on invalid JSON or any unknown token.
 ///
 /// # Example
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::load_theme_registry;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::load_theme_from_json;
+///
 /// #[component]
-/// fn App() -> Element {
-///     let handle = load_theme_registry(include_str!("themes/light.json"));
-///     rsx! { /* … */ }
+/// fn App() {
+///     let handle = load_theme_from_json(include_str!("themes/light.json"));
+///     div().child(text("Hello, FreyaCN!"))
 /// }
 /// ```
-pub fn load_theme_registry(initial_json: &str) -> ThemeHandle {
+pub fn load_theme_from_json(initial_json: &str) -> ThemeHandle {
     use_hook(|| {
         let registry = Arc::new(ThemeRegistry::new());
         let theme = registry.load(initial_json);
@@ -4035,41 +4116,88 @@ pub fn load_theme_registry(initial_json: &str) -> ThemeHandle {
         provide_context(active);
 
         let handle = ThemeHandle { registry, active };
-        // Also provide the handle, so any descendant can call
-        // `use_theme_handle()` and reach the registry (theme pickers,
-        // settings panels, CLI introspection).
         provide_context(handle.clone());
         handle
     })
 }
 
-/// Alias for [`load_theme_registry`] matching hook-style naming conventions.
-pub use load_theme_registry as use_init_theme_registry;
-
-/// Load every `.json` file in `dir` and install one of them as the
-/// active theme.
+/// Load every `.json` file in `dir` and install the first one as the
+/// app's active theme.
 ///
-/// Like [`load_theme_registry`] but loads from a directory. The first
-/// file (filesystem order) becomes active. **Panics** on I/O errors,
+/// `dir` accepts anything that converts to a `Path`: `&str`, `String`,
+/// `&Path`, `PathBuf`. Files are loaded in filesystem order; the first
+/// one becomes active. Non-`.json` files are ignored.
+///
+/// Must be called inside a Freya component. **Panics** on I/O errors,
 /// empty directory, or any unknown token.
 ///
 /// # Example
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::load_theme_registry_from_dir;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::load_themes;
+///
 /// #[component]
-/// fn App() -> Element {
-///     let handle = load_theme_registry_from_dir(
-///         std::path::Path::new("themes"),
-///     );
-///     rsx! { /* … */ }
+/// fn App() {
+///     let handle = load_themes("themes");
+///     div().child(text("Hello, FreyaCN!"))
 /// }
 /// ```
-pub fn load_theme_registry_from_dir(dir: &std::path::Path) -> ThemeHandle {
+pub fn load_themes(dir: impl AsRef<Path>) -> ThemeHandle {
     use_hook(|| {
         let registry = Arc::new(ThemeRegistry::new());
-        registry.load_dir(dir);
+        registry.load_dir(dir.as_ref());
+        let active = registry.active().expect("no theme was loaded");
+        set_active_theme(active.clone());
+        let state = State::create(active);
+        provide_context(state);
+
+        let handle = ThemeHandle {
+            registry,
+            active: state,
+        };
+        provide_context(handle.clone());
+        handle
+    })
+}
+
+/// Load every `.json` file in `dir` and activate `default_id`.
+///
+/// Like [`load_themes`] but instead of activating the first file in
+/// filesystem order, activates the theme whose `id` matches
+/// `default_id`. Useful when you ship a bundle of themes and want a
+/// specific one to win on launch (e.g. `"default-dark"`).
+///
+/// Panics if no theme in the directory has that id.
+///
+/// `dir` accepts anything that converts to a `Path`: `&str`, `String`,
+/// `&Path`, `PathBuf`. Must be called inside a Freya component.
+/// **Panics** on I/O errors, empty directory, unknown `default_id`, or
+/// any unknown token.
+///
+/// # Example
+///
+/// ```no_run
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+/// use freyacn_core::theme::load_themes_with_default;
+///
+/// #[component]
+/// fn App() {
+///     // Load every theme in `themes/`, then activate `default-dark`
+///     // regardless of which file was loaded first.
+///     let handle = load_themes_with_default("themes", "default-dark");
+///     div().child(text("Hello, FreyaCN!"))
+/// }
+/// ```
+pub fn load_themes_with_default(dir: impl AsRef<Path>, default_id: &str) -> ThemeHandle {
+    use_hook(|| {
+        let registry = Arc::new(ThemeRegistry::new());
+        registry.load_dir(dir.as_ref());
+        registry
+            .set_active(default_id)
+            .unwrap_or_else(|e| panic!("failed to activate default theme `{default_id}`: {e}"));
         let active = registry.active().expect("no theme was loaded");
         set_active_theme(active.clone());
         let state = State::create(active);
@@ -4089,18 +4217,19 @@ pub fn load_theme_registry_from_dir(dir: &std::path::Path) -> ThemeHandle {
 /// Re-renders the calling component whenever
 /// [`ThemeHandle::set_active`] / [`ThemeHandle::reload_dir`] changes the
 /// theme. Panics if called outside a component tree — use
-/// [`get_cn_theme_or_default`] for a non-panicking variant.
+/// [`get_theme_or_default`] for a non-panicking variant.
 ///
 /// # Example
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::use_cn_theme;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+///
 /// #[component]
-/// fn MyCard() -> Element {
+/// fn MyCard() {
 ///     let theme = use_cn_theme();
 ///     let bg = theme.read().card_fill();
-///     rsx! { rect { background: "{bg:?}" } }
+///     div().bg(StyledColor::from_fill(bg))
 /// }
 /// ```
 pub fn use_cn_theme() -> State<Arc<Theme>> {
@@ -4116,13 +4245,14 @@ pub fn use_cn_theme() -> State<Arc<Theme>> {
 /// # Example
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::use_theme;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+///
 /// #[component]
-/// fn MyButton() -> Element {
+/// fn MyButton() {
 ///     let theme = use_theme();
 ///     let bg = theme.primary_fill();
-///     rsx! { rect { background: "{bg:?}" } }
+///     div().bg(StyledColor::from_fill(bg))
 /// }
 /// ```
 pub fn use_theme() -> Arc<Theme> {
@@ -4130,23 +4260,26 @@ pub fn use_theme() -> Arc<Theme> {
 }
 
 /// Consume the [`ThemeHandle`] provided by
-/// [`load_theme_registry`] / [`load_theme_registry_from_dir`].
+/// [`load_theme`] / [`load_theme_from_json`] / [`load_themes`] /
+/// [`load_themes_with_default`].
 ///
 /// Any component below the provider can call this to reach the full
 /// registry — useful for theme pickers, settings panels, and anything
 /// that needs to enumerate or switch themes.
 ///
-/// Panics if called outside a component tree that called
-/// `load_theme_registry*`. Use [`try_consume_context`] directly if you
-/// need a non-panicking variant.
+/// Panics if called outside a component tree that called one of
+/// `load_theme` / `load_theme_from_json` / `load_themes` /
+/// `load_themes_with_default`. Use [`try_consume_context`] directly if
+/// you need a non-panicking variant.
 ///
 /// # Example — a full picker component
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::{use_theme_handle, Appearance, ThemeInfo};
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+///
 /// #[component]
-/// fn ThemePicker() -> Element {
+/// fn ThemePicker() {
 ///     let handle = use_theme_handle();
 ///
 ///     // Subscribes — re-renders on `set_active`.
@@ -4154,64 +4287,68 @@ pub fn use_theme() -> Arc<Theme> {
 ///     // Cheap list, stable order.
 ///     let infos = handle.theme_infos();
 ///
-///     rsx! {
-///         rect {
-///             direction: "column",
-///             gap: "4",
-///             for info in infos {
-///                 {
-///                     let is_current = info.id == active.id;
-///                     let icon = match info.appearance {
-///                         Appearance::Light => "☀",
-///                         Appearance::Dark => "☾",
-///                     };
-///                     let label = format!(
-///                         "{} {} {}",
-///                         if is_current { "✓" } else { " " },
-///                         icon,
-///                         info.name,
-///                     );
-///                     let id = info.id.clone();
-///                     let handle = handle.clone();
-///                     rsx! {
-///                         rect {
-///                             key: "{id}",
-///                             padding: "8",
-///                             background: if is_current { "rgba(0,0,0,0.1)" } else { "transparent" },
-///                             onclick: move |_| { let _ = handle.set_active(&id); },
-///                             label { "{label}" }
-///                         }
-///                     }
-///                 }
-///             }
-///         }
+///     let mut list = div().style("flex-col gap-1");
+///     for info in infos {
+///         let is_current = info.id == active.id;
+///         let icon = match info.appearance {
+///             Appearance::Light => "☀",
+///             Appearance::Dark => "☾",
+///         };
+///         let label_text = format!(
+///             "{} {} {}",
+///             if is_current { "✓" } else { " " },
+///             icon,
+///             info.name,
+///         );
+///         let id = info.id.clone();
+///         let handle = handle.clone();
+///         let bg = if is_current { "rgba(0,0,0,0.1)" } else { "transparent" };
+///         list = list.child(
+///             div()
+///                 .style("p-2")
+///                 .background(bg)
+///                 .on_press(move |_| { let _ = handle.set_active(&id); })
+///                 .child(text(label_text)),
+///         );
 ///     }
+///     list
 /// }
 /// ```
 ///
 /// # Example — settings panel that persists the choice
 ///
 /// ```no_run
-/// # use freya::prelude::*;
-/// # use freya_cn::theme::use_theme_handle;
+/// use freya::prelude::*;
+/// use freyacn_core::prelude::*;
+///
 /// #[component]
-/// fn ThemeSettings() -> Element {
+/// fn ThemeSettings() {
 ///     let handle = use_theme_handle();
 ///     let active = handle.active_info();
 ///
-///     let on_switch = move |id: String| {
-///         if handle.contains(&id) {
-///             let _ = handle.set_active(&id);
-///             // Persist the ID so the next launch restores it.
-///             let _ = std::fs::write("theme.txt", &id);
+///     let _on_switch = {
+///         let handle = handle.clone();
+///         move |id: String| {
+///             if handle.contains(&id) {
+///                 let _ = handle.set_active(&id);
+///                 // Persist the ID so the next launch restores it.
+///                 let _ = std::fs::write("theme.txt", &id);
+///             }
 ///         }
 ///     };
 ///
-///     rsx! {
-///         label { "Current theme: {active.name} v{active.version}" }
-///         label { "Author: {active.author.clone().unwrap_or_default()}" }
+///     div()
+///         .style("flex-col gap-1")
+///         .child(text(format!(
+///             "Current theme: {} v{}",
+///             active.name,
+///             active.version,
+///         )))
+///         .child(text(format!(
+///             "Author: {}",
+///             active.author.clone().unwrap_or_default(),
+///         )))
 ///         // …list rendered here, calling `on_switch(id)` per entry…
-///     }
 /// }
 /// ```
 pub fn use_theme_handle() -> ThemeHandle {
@@ -4223,7 +4360,7 @@ pub fn use_theme_handle() -> ThemeHandle {
 ///
 /// Use this in components that may be rendered outside a Freya provider
 /// (tests, isolated previews). Subscribes when a provider is present.
-pub fn get_cn_theme_or_default() -> Readable<Arc<Theme>> {
+pub fn get_theme_or_default() -> Readable<Arc<Theme>> {
     try_consume_context::<State<Arc<Theme>>>()
         .map(|s| s.into())
         .unwrap_or_else(|| Arc::new(Theme::empty_light()).into())

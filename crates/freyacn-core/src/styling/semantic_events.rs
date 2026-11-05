@@ -17,8 +17,7 @@ use std::rc::Rc;
 ///
 /// Each field is a plain `bool` because Freya's `AccessibilityData`
 /// already carries the actual accessibility attribute — this struct is
-/// only used to translate the *style* variant. Setting a field to `true`
-/// also means "the corresponding `aria-*` attribute is `"true"`".
+/// only used to translate the *style* variant.
 ///
 /// Call [`AriaState::active_variants`] from a component's `render` to get
 /// the `StyleVariant`s to push into the live-variant set.
@@ -37,13 +36,6 @@ pub struct AriaState {
 
 impl AriaState {
     /// Every `StyleVariant::Aria*` whose flag is set, in a stable order.
-    ///
-    /// Push the result into the component's live-variant list alongside
-    /// `Hover` / `Focus` / `Disabled`:
-    ///
-    /// ```ignore
-    /// live.extend(self.semantic_events.aria_state.active_variants());
-    /// ```
     pub fn active_variants(self) -> Vec<StyleVariant> {
         let mut out = Vec::new();
         if self.invalid {
@@ -78,6 +70,57 @@ impl AriaState {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Has: state — manual overrides
+// ─────────────────────────────────────────────────────────────────────
+
+/// Explicit `has:` flags, set via `.with_has_svg(..)` / `.with_has_img(..)`
+/// / etc.
+///
+/// Unlike automatic signaling (a descendant `Icon` firing
+/// `HasKind::Svg`), the manual flags have **no one-frame delay** and
+/// **do reset** the moment the flag is set back to `false` — Freya has
+/// no unmount hook, so automatic signals accumulate but manual flags
+/// don't.
+///
+/// Call [`HasManualFlags::active_variants`] from `render` and extend
+/// the live-variant set.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub struct HasManualFlags {
+    pub svg: bool,
+    pub img: bool,
+    pub checked: bool,
+    pub selected: bool,
+    pub disabled: bool,
+}
+
+impl HasManualFlags {
+    /// Every `StyleVariant::Has*` whose flag is set, in a stable order.
+    pub fn active_variants(self) -> Vec<StyleVariant> {
+        let mut out = Vec::new();
+        if self.svg {
+            out.push(StyleVariant::HasSvg);
+        }
+        if self.img {
+            out.push(StyleVariant::HasImg);
+        }
+        if self.checked {
+            out.push(StyleVariant::HasChecked);
+        }
+        if self.selected {
+            out.push(StyleVariant::HasSelected);
+        }
+        if self.disabled {
+            out.push(StyleVariant::HasDisabled);
+        }
+        out
+    }
+
+    pub fn is_empty(self) -> bool {
+        !self.svg && !self.img && !self.checked && !self.selected && !self.disabled
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Data
 // ─────────────────────────────────────────────────────────────────────
 
@@ -94,6 +137,11 @@ pub struct SemanticEvents {
 
     /// Current aria-* state, driving the `aria-*:` variant prefixes.
     pub aria_state: AriaState,
+
+    /// Manual `has:` flags, driving the `has-*:` variant prefixes.
+    /// These sit alongside automatic signaling from descendants — both
+    /// sources get merged into the live-variant set at render time.
+    pub has_state: HasManualFlags,
 }
 
 impl SemanticEvents {
@@ -120,14 +168,6 @@ pub trait HasSemanticEvents: Sized {
     fn semantic_events_mut(&mut self) -> &mut SemanticEvents;
 
     /// Replace this component's event bundle wholesale.
-    ///
-    /// The primary use case is forwarding: a parent component that owns a
-    /// `SemanticEvents` bundle hands it to a child primitive that also
-    /// implements `HasSemanticEvents`:
-    ///
-    /// ```
-    /// btn.semantic_events(self.semantic_events.clone())
-    /// ```
     fn semantic_events(mut self, events: SemanticEvents) -> Self {
         *self.semantic_events_mut() = events;
         self
@@ -210,6 +250,50 @@ pub trait HasSemanticEvents: Sized {
     }
     fn with_aria_hidden(mut self, v: bool) -> Self {
         self.semantic_events_mut().aria_state.hidden = v;
+        self
+    }
+
+    // ── has: state builders ────────────────────────────────────────
+
+    /// Replace the full manual `has:` state in one call.
+    fn has_state(mut self, state: HasManualFlags) -> Self {
+        self.semantic_events_mut().has_state = state;
+        self
+    }
+
+    /// Declare that this element contains an SVG child. Fires
+    /// `has-[svg]:` classes on this element without requiring a
+    /// descendant `Icon` to signal — useful when the child is
+    /// conditional and you want instant updates (no one-frame delay)
+    /// or when the child is rendered outside `Icon`.
+    fn with_has_svg(mut self, v: bool) -> Self {
+        self.semantic_events_mut().has_state.svg = v;
+        self
+    }
+
+    /// Declare that this element contains an Image child. See
+    /// [`with_has_svg`](Self::with_has_svg) for the automatic-vs-manual
+    /// tradeoff.
+    fn with_has_img(mut self, v: bool) -> Self {
+        self.semantic_events_mut().has_state.img = v;
+        self
+    }
+
+    /// Declare that this element contains a checked control.
+    fn with_has_checked(mut self, v: bool) -> Self {
+        self.semantic_events_mut().has_state.checked = v;
+        self
+    }
+
+    /// Declare that this element contains a selected child.
+    fn with_has_selected(mut self, v: bool) -> Self {
+        self.semantic_events_mut().has_state.selected = v;
+        self
+    }
+
+    /// Declare that this element contains a disabled child.
+    fn with_has_disabled(mut self, v: bool) -> Self {
+        self.semantic_events_mut().has_state.disabled = v;
         self
     }
 }

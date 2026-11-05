@@ -218,8 +218,13 @@ fn extension_for(
 
                 vec![quote! {
                     let __freyacn_merged_style: #krate::styling::Style = {
-                        let mut __freyacn_base =
-                            <#krate::styling::Style as ::core::default::Default>::default();
+                        // `Style::bare()` — start transparent. `Style::default()`
+                        // would seed `background = theme.background` and
+                        // `text_color = theme.foreground`, making every
+                        // `#[component]` opaque and overriding inherited text
+                        // colour from ancestors. Matches CSS: a bare `<div>` is
+                        // transparent, not opaque.
+                        let mut __freyacn_base = #krate::styling::Style::bare();
                         #base_assign
                         #(#merges)*
                         __freyacn_base.merge_style(&self.style)
@@ -234,13 +239,6 @@ fn extension_for(
                     pub style: #krate::styling::Style
                 }],
                 inits: vec![quote! {
-                    // `Style::bare()` — sparse patch on top of the theme
-                    // defaults assembled by `#[component]`. Do NOT use
-                    // `Style::default()` here: it would re-introduce
-                    // theme values (`text_color = foreground`,
-                    // `background = background`, …) on every merge and
-                    // silently overwrite variant class strings such as
-                    // `text-primary-foreground`.
                     style: #krate::styling::Style::bare()
                 }],
                 locals,

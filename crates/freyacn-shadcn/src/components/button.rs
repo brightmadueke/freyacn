@@ -33,28 +33,42 @@ pub enum ButtonVariant {
 #[variant(freyacn_core)]
 #[derive(Default, PartialEq, Clone)]
 pub enum ButtonSize {
+    /// `default: "h-9 px-4 py-2 has-[>svg]:px-3"` from shadcn.
+    ///
+    /// FreyaCN spells the `has:` selector as `has-[svg]` (no `>` child
+    /// combinator) — the parser treats "some descendant is an SVG" as
+    /// equivalent to "immediate child is an SVG", which matches
+    /// shadcn's intent for buttons. See `styling::has` for the exact
+    /// semantics.
     #[default]
-    #[variant("h-9 px-4 py-2")]
+    #[variant("h-9 px-4 py-2 has-[svg]:px-3")]
     Default,
 
-    #[variant("h-6 gap-1 rounded-md px-2 text-xs")]
+    /// `xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 …"`
+    #[variant("h-6 gap-1 rounded-md px-2 text-xs has-[svg]:px-1.5")]
     Xs,
 
-    #[variant("h-8 gap-1.5 rounded-md px-3")]
+    /// `sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5"`
+    #[variant("h-8 gap-1.5 rounded-md px-3 has-[svg]:px-2.5")]
     Sm,
 
-    #[variant("h-10 rounded-md px-6")]
+    /// `lg: "h-10 rounded-md px-6 has-[>svg]:px-4"`
+    #[variant("h-10 rounded-md px-6 has-[svg]:px-4")]
     Lg,
 
+    /// `icon: "size-9"`
     #[variant("size-9")]
     Icon,
 
+    /// `icon-xs: "size-6 rounded-md …"`
     #[variant("size-6 rounded-md")]
     IconXs,
 
+    /// `icon-sm: "size-8"`
     #[variant("size-8")]
     IconSm,
 
+    /// `icon-lg: "size-10"`
     #[variant("size-10")]
     IconLg,
 }

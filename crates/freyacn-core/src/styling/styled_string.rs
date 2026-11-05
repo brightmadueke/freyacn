@@ -1,13 +1,44 @@
 //! Inline Tailwind-style class strings for [`StyledExt`].
 //!
-//! Colour utilities (`bg-*`, `text-*`, `border-*`, `ring-*`) resolve
-//! their `<color>` argument in three steps: the built-in palette, the
-//! active theme's fill map, then the active theme's color map. Tokens
-//! the theme defines — `primary`, `destructive`, `ring`, `input`,
-//! `background`, `foreground`, `secondary`, `accent`, `surface`, … —
-//! resolve via those last two.
+//! Colour utilities (`bg-*`, `text-*`, `border-*`, `ring-*`,
+//! `shadow-{color}`) resolve their `<color>` argument in three steps:
+//! the built-in palette, the active theme's fill map, then the active
+//! theme's color map. Tokens the theme defines — `primary`,
+//! `destructive`, `ring`, `input`, `background`, `foreground`,
+//! `secondary`, `accent`, `surface`, … — resolve via those last two.
+//!
+//! ## Shadows
+//!
+//! Both shadow families parse from class strings:
+//!
+//! - **Box shadows** — `shadow-{size}`, `shadow-none`, `shadow-inner`,
+//!   and `shadow-{color}`. Sizes take precedence; `shadow-md` is
+//!   always a size, never a colour. Sizes **replace** the current
+//!   shadow vector (matching Tailwind's `box-shadow:` semantics);
+//!   `.shadow-color-…` and the `shadow-{color}` form recolor every
+//!   currently-registered layer.
+//! - **Text shadows** — `text-shadow-{size}` and `text-shadow-none`.
+//!   Same replace semantics as `StyledExt`.
+//!
+//! ## `has:` variants
+//!
+//! Structural signals take the `has-<selector>:` prefix and translate
+//! into the [`HasKind`](crate::styling::has::HasKind) family:
+//!
+//! - `has-[svg]:…` → `HasSvg`
+//! - `has-[img]:…` → `HasImg`
+//! - `has-[:checked]:…` → `HasChecked`
+//! - `has-[:selected]:…` → `HasSelected`
+//! - `has-[:disabled]:…` → `HasDisabled`
+//!
+//! Arbitrary selectors (`has-[.foo]`, `has-[data-x]`) aren't supported
+//! — Freya has no DOM tree to match against. See the
+//! [`has`](crate::styling::has) module docs for the mechanism and its
+//! limitations (one-frame mount delay, no unmount cleanup, immediate
+//! children only unless intermediates also declare `has:` classes).
 
 use crate::styling::colors::{self as c, StyledColor};
+use crate::styling::has::HasKind;
 use crate::styling::style::Style;
 use crate::styling::style_variants::{StyleVariant, VariantFn};
 use crate::styling::styled::StyledExt;
@@ -42,6 +73,18 @@ impl StyledString {
 
             let mut kinds: Vec<VariantKind> = Vec::with_capacity(prefixes.len());
             for prefix in &prefixes {
+                // `has-*` prefixes are structural signals — they take
+                // the form `has-[<selector>]` or `has-<name>` and need
+                // to be dispatched to `HasKind::from_selector` before
+                // falling through to the plain `VariantKind::from_str`
+                // table.
+                if let Some(sel) = prefix.strip_prefix("has-") {
+                    match HasKind::from_selector(sel) {
+                        Some(kind) => kinds.push(VariantKind::Has(kind)),
+                        None => panic_unknown(class),
+                    }
+                    continue;
+                }
                 match VariantKind::from_str(prefix) {
                     Some(k) => kinds.push(k),
                     None => panic_unknown(class),
@@ -134,7 +177,12 @@ fn panic_unknown(class: &str) -> ! {
         let unknown: Vec<&str> = prefixes
             .iter()
             .copied()
-            .filter(|p| VariantKind::from_str(p).is_none())
+            .filter(|p| {
+                VariantKind::from_str(p).is_none()
+                    && !p
+                        .strip_prefix("has-")
+                        .map_or(false, |s| HasKind::from_selector(s).is_some())
+            })
             .collect();
         if !unknown.is_empty() {
             format!(
@@ -142,7 +190,9 @@ fn panic_unknown(class: &str) -> ! {
                  `dark`, `hover`, `focus`, `focus-visible`, `focus-within`, \
                  `active`, `disabled`, `checked`, `selected`, `aria-invalid`, \
                  `aria-checked`, `aria-disabled`, `aria-expanded`, `aria-pressed`, \
-                 `aria-readonly`, `aria-required`, `aria-selected`, `aria-hidden`)"
+                 `aria-readonly`, `aria-required`, `aria-selected`, `aria-hidden`, \
+                 or a `has-*` signal — `has-[svg]`, `has-[img]`, \
+                 `has-[:checked]`, `has-[:selected]`, `has-[:disabled]`)"
             )
         } else if rest.is_empty() {
             " (class ends with `:` but no utility follows)".to_string()
@@ -154,7 +204,10 @@ fn panic_unknown(class: &str) -> ! {
         "[StyledString] unknown class `{class}`{hint}. \
          Expected a Tailwind-style utility (e.g. `p-4`, `bg-blue-500`, `font-bold`), \
          a variant-prefixed class (e.g. `hover:bg-blue-500`, `dark:hover:bg-blue-500`), \
+         a `has-*`-prefixed class (e.g. `has-[svg]:pl-3`, `has-[:checked]:bg-primary/5`), \
          a ring utility (e.g. `ring`, `ring-2`, `ring-[3px]`, `ring-ring/50`), \
+         a shadow utility (e.g. `shadow-sm`, `shadow-md`, `shadow-inner`, `shadow-none`, \
+         or `shadow-primary` for a theme-tinted shadow), \
          or a bracketed arbitrary value (e.g. `w-[300px]`, `bg-[#ff0000]`). \
          Colour names must be either a palette entry (`blue-500`, `neutral-950`, \
          `white`, `black`, `transparent`) or a token the active theme defines \
@@ -229,6 +282,13 @@ fn split_variants(class: &str) -> (Vec<&str>, &str) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum VariantKind {
     Dark,
+    /// Structural `has:` signal — `has-[svg]`, `has-[:checked]`, etc.
+    ///
+    /// Declared before the interaction variants so the `sort()` /
+    /// `dedup()` in `parse` produces a stable order. Position in the
+    /// enum only affects `VariantKind` ordering for dedup — the actual
+    /// applied precedence comes from `StyleVariant::priority`.
+    Has(HasKind),
     Hover,
     Focus,
     FocusVisible,
@@ -276,6 +336,7 @@ impl VariantKind {
     fn to_style_variant(self) -> StyleVariant {
         match self {
             Self::Dark => StyleVariant::Dark,
+            Self::Has(kind) => kind.to_variant(),
             Self::Hover => StyleVariant::Hover,
             Self::Focus => StyleVariant::Focus,
             Self::FocusVisible => StyleVariant::FocusVisible,
@@ -354,8 +415,27 @@ enum Family {
     Mono,
 }
 
+/// Box-shadow size suffixes — the full Tailwind v4.1 set plus `inner`.
+///
+/// `none` clears the vector, matching `StyledExt::shadow_none()`.
 #[derive(Clone, Copy)]
 enum ShadowSize {
+    None,
+    S2xs,
+    Xs,
+    Sm,
+    Md,
+    Lg,
+    Xl,
+    S2xl,
+    Inner,
+}
+
+/// Text-shadow size suffixes — the subset Tailwind v4.1 defines for
+/// `text-shadow-*`. Deliberately narrower than [`ShadowSize`]: Tailwind
+/// has no `text-shadow-xl`, `-2xl`, or `-inner`.
+#[derive(Clone, Copy)]
+enum TextShadowSize {
     None,
     S2xs,
     Xs,
@@ -378,7 +458,19 @@ enum Op {
     FontFamily(Family),
     Tracking(f32),
     LineHeight(f32),
-    TextShadow(ShadowSize),
+    TextShadow(TextShadowSize),
+    /// Box shadow, from `shadow-{size}`.
+    ///
+    /// Sizes **replace** the shadow vector (matching Tailwind and
+    /// `StyledExt`), so `shadow-sm shadow-md` yields only `md`'s
+    /// layers. `shadow-none` clears the vector outright.
+    BoxShadow(ShadowSize),
+    /// Shadow tint, from `shadow-{color}`.
+    ///
+    /// Recolors every currently-registered layer. No-op when the
+    /// vector is empty, mirroring Tailwind's requirement that
+    /// `shadow-{color}` always accompany a `shadow-{size}`.
+    ShadowColor(StyledColor),
     TextDecoration(TextDecoration),
     Cursor(CursorIcon),
     CursorHidden,
@@ -452,13 +544,25 @@ impl Op {
             Op::Tracking(em) => t.tracking(em),
             Op::LineHeight(l) => t.line_height(l),
             Op::TextShadow(s) => match s {
-                ShadowSize::None => t.text_shadow_none(),
-                ShadowSize::S2xs => t.text_shadow_2xs(),
-                ShadowSize::Xs => t.text_shadow_xs(),
-                ShadowSize::Sm => t.text_shadow_sm(),
-                ShadowSize::Md => t.text_shadow_md(),
-                ShadowSize::Lg => t.text_shadow_lg(),
+                TextShadowSize::None => t.text_shadow_none(),
+                TextShadowSize::S2xs => t.text_shadow_2xs(),
+                TextShadowSize::Xs => t.text_shadow_xs(),
+                TextShadowSize::Sm => t.text_shadow_sm(),
+                TextShadowSize::Md => t.text_shadow_md(),
+                TextShadowSize::Lg => t.text_shadow_lg(),
             },
+            Op::BoxShadow(s) => match s {
+                ShadowSize::None => t.shadow_none(),
+                ShadowSize::S2xs => t.shadow_2xs(),
+                ShadowSize::Xs => t.shadow_xs(),
+                ShadowSize::Sm => t.shadow_sm(),
+                ShadowSize::Md => t.shadow_md(),
+                ShadowSize::Lg => t.shadow_lg(),
+                ShadowSize::Xl => t.shadow_xl(),
+                ShadowSize::S2xl => t.shadow_2xl(),
+                ShadowSize::Inner => t.shadow_inner(),
+            },
+            Op::ShadowColor(c) => t.shadow_color(c),
             Op::TextDecoration(d) => t.text_decoration(d),
             Op::Cursor(cur) => t.cursor(cur),
             Op::CursorHidden => t.cursor_none(),
@@ -1166,16 +1270,32 @@ fn parse_base(c: &str) -> Option<Op> {
     if let Some(r) = c.strip_prefix("rounded-") {
         return rounded(r);
     }
+    // Text-shadow must be checked before the box-shadow block. Both
+    // prefixes end in `shadow-`, so `text-shadow-sm`.strip_prefix("text-shadow-")
+    // returns `"sm"` — but `text-shadow-sm`.strip_prefix("shadow-")`
+    // returns `None` (it starts with `text-`, not `shadow-`), so there
+    // is no actual collision. Keeping text-shadow first documents the
+    // intent and leaves the door open for future prefix extensions.
     if let Some(v) = c.strip_prefix("text-shadow-") {
         return Some(Op::TextShadow(match v {
-            "none" => ShadowSize::None,
-            "2xs" => ShadowSize::S2xs,
-            "xs" => ShadowSize::Xs,
-            "sm" => ShadowSize::Sm,
-            "md" => ShadowSize::Md,
-            "lg" => ShadowSize::Lg,
+            "none" => TextShadowSize::None,
+            "2xs" => TextShadowSize::S2xs,
+            "xs" => TextShadowSize::Xs,
+            "sm" => TextShadowSize::Sm,
+            "md" => TextShadowSize::Md,
+            "lg" => TextShadowSize::Lg,
             _ => return None,
         }));
+    }
+    // Box shadow — `shadow-{size}` or `shadow-{color}`. Sizes are
+    // checked first so `shadow-md` is never misread as a colour named
+    // `md`; only when the suffix is not a size name does the parser
+    // fall through to colour resolution.
+    if let Some(v) = c.strip_prefix("shadow-") {
+        if let Some(size) = shadow_size(v) {
+            return Some(Op::BoxShadow(size));
+        }
+        return color_value(v).map(Op::ShadowColor);
     }
     if let Some(v) = c.strip_prefix("backdrop-blur-") {
         return backdrop_blur(v);
@@ -1383,6 +1503,21 @@ fn border_class(c: &str) -> Option<Op> {
         return Some(Op::BorderWidth(edge, 1.0));
     }
     None
+}
+
+fn shadow_size(v: &str) -> Option<ShadowSize> {
+    Some(match v {
+        "none" => ShadowSize::None,
+        "2xs" => ShadowSize::S2xs,
+        "xs" => ShadowSize::Xs,
+        "sm" => ShadowSize::Sm,
+        "md" => ShadowSize::Md,
+        "lg" => ShadowSize::Lg,
+        "xl" => ShadowSize::Xl,
+        "2xl" => ShadowSize::S2xl,
+        "inner" => ShadowSize::Inner,
+        _ => return None,
+    })
 }
 
 fn backdrop_blur(v: &str) -> Option<Op> {

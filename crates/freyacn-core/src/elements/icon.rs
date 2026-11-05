@@ -1,17 +1,21 @@
 //! `Icon` — an SVG element built on [`SvgViewer`] that participates in the
 //! same style / variant / inheritance system as `Div`, `Text`, `Image`, …
 //!
-//! Lucide icons (and most modern icon sets) use `stroke="currentColor"`,
-//! so the SVG's paint is fully driven by [`SvgViewer::color`]. `Icon`
-//! wires `Style::text_color` into that slot, so an icon inherits its
-//! colour from the nearest ancestor that provided an [`InheritedStyle`] —
-//! typically the `Button` / `Div` / `Text` wrapping it.
+//! ## Shadows
 //!
-//! ```ignore
-//! Button::new()
-//!     .child(icon(lucide::heart()))   // inherits Button's text colour
-//! ```
+//! `SvgViewer` (Freya `0.5.0-rc.13`) doesn't expose `.shadow(..)`. Both
+//! `.shadow_*()` (box) and `.text_shadow_*()` (glyph) are silently
+//! dropped. Wrap in a `div().shadow_md()` for a shadowed icon.
+//!
+//! ## Has: signaling
+//!
+//! Every `Icon` signals `HasKind::Svg` to its nearest
+//! [`HasContext`](crate::styling::has::HasContext), so an ancestor with
+//! `has-[svg]:` styles fires when this icon is present. Because of the
+//! one-frame delay described in `styling::has`, the ancestor updates on
+//! the *second* render after this icon mounts.
 
+use crate::styling::has::{HasKind, use_has_signal, use_has_signal_when};
 use crate::styling::semantic_events::{
     HasSemanticEvents, SemanticEvents, attach_pointer_handlers, use_semantic_focus_events,
 };
@@ -36,28 +40,35 @@ use torin::prelude::Size;
 ///
 /// ## Defaults
 ///
-/// - **Size**: `16px × 16px` (matching shadcn's `size-4`). Override with
-///   `.size(n)` / `.w(n).h(n)`.
+/// - **Size**: `16px × 16px`. Override with `.size(n)`.
 /// - **Colour**: inherits from the nearest ancestor `InheritedStyle`
-///   via `.color(text_color)`. Override with `.color(..)`,
-///   `.fill(..)`, or `.stroke(..)`.
-/// - **Stroke width**: whatever the SVG specifies (lucide default 2.0).
-///   Override with `.stroke_width(w)`.
+///   via `.color(text_color)`. Override with `.color(..)` / `.fill(..)` /
+///   `.stroke(..)`.
+/// - **Stroke width**: whatever the SVG specifies. Override with
+///   `.stroke_width(w)`.
 ///
 /// ## Composition
 ///
-/// `Icon` renders a bare `SvgViewer` — no wrapper `Div`. Style
-/// inheritance, variant resolution, focus / pointer tracking, and a11y
-/// all flow through the same machinery as `Div`.
+/// Renders a bare `SvgViewer`. Style inheritance, variant resolution,
+/// focus tracking, and a11y flow through the same machinery as `Div`.
 ///
 /// ## Style inheritance
 ///
 /// `Style::text_color` maps to `SvgViewer::color()`, which is the SVG's
-/// `currentColor` slot. Any ancestor that provides an `InheritedStyle`
-/// (every `Div`, `Button`, `Text`, `Paragraph`, …) contributes its
-/// effective text colour, so an icon inside a shadcn `Button` with
-/// `text-primary-foreground` takes that exact colour with zero
-/// per-icon code.
+/// `currentColor` slot. Any ancestor providing an `InheritedStyle`
+/// contributes its effective text colour.
+///
+/// ## Shadows
+///
+/// Neither shadow vector renders on an `Icon` — see the module doc.
+/// Wrap in a `div()` for a shadow.
+///
+/// ## Has: signaling
+///
+/// Signals [`HasKind::Svg`] to the nearest ancestor `HasContext` so
+/// `has-[svg]:` fires on that ancestor. Signals [`HasKind::Disabled`]
+/// when the icon is disabled. Both are subject to the one-frame delay
+/// and persistence caveats of [`crate::styling::has`].
 #[derive(PartialEq, Clone)]
 pub struct Icon {
     source: ImageSource,
@@ -67,13 +78,10 @@ pub struct Icon {
     key: DiffKey,
     accessibility: AccessibilityData,
 
-    // Raw paint overrides. `None` = inherit from `Style`.
     fill: Option<StyledColor>,
     stroke: Option<StyledColor>,
     stroke_width: Option<f32>,
 
-    // State flags — drive `disabled:*` / `checked:*` / `selected:*`
-    // and the `aria-*` variant families.
     disabled: bool,
     checked: bool,
     selected: bool,
@@ -88,8 +96,6 @@ pub fn icon(source: impl Into<ImageSource>) -> Icon {
 
 impl Icon {
     pub fn new(source: impl Into<ImageSource>) -> Self {
-        // Default size 16×16 (shadcn `size-4`). `Style::bare()` is the
-        // "no theme" base, matching how `Div` and `Image` start.
         let mut style = Style::bare();
         style.width = Size::px(16.0);
         style.height = Size::px(16.0);
@@ -114,75 +120,51 @@ impl Icon {
         }
     }
 
-    // ── size ───────────────────────────────────────────────────────
-
-    /// Square size in pixels. Equivalent to `.w(n).h(n)`.
     pub fn size(mut self, v: f32) -> Self {
         self.style.width = Size::px(v);
         self.style.height = Size::px(v);
         self
     }
 
-    // ── paint ──────────────────────────────────────────────────────
-
-    /// Override the SVG's `currentColor` slot.
-    ///
-    /// By default `Icon` fills this from `Style::text_color` (the
-    /// inherited text colour), so most callers don't need this — use it
-    /// when the icon should diverge from the surrounding text.
     pub fn color(mut self, color: impl Into<StyledColor>) -> Self {
-        self.style.text_color = color.into().into();
+        let sc: StyledColor = color.into();
+        self.style.text_color = sc.to_fill();
         self
     }
 
-    /// Override the SVG shapes' `fill` attribute. Rare for line icons.
     pub fn fill(mut self, color: impl Into<StyledColor>) -> Self {
         self.fill = Some(color.into());
         self
     }
 
-    /// Override the SVG shapes' `stroke` attribute. Bypasses
-    /// `currentColor` — useful for two-tone icon sets.
     pub fn stroke(mut self, color: impl Into<StyledColor>) -> Self {
         self.stroke = Some(color.into());
         self
     }
 
-    /// Override the SVG's stroke width.
     pub fn stroke_width(mut self, w: f32) -> Self {
         self.stroke_width = Some(w);
         self
     }
 
-    // ── state ──────────────────────────────────────────────────────
-
-    /// Disable the icon.
-    ///
-    /// Sets the native flag **and** the `aria-disabled` state, so both
-    /// `disabled:*` and `aria-disabled:*` class families fire from a
-    /// single call.
     pub fn with_disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self.semantic_events.aria_state.disabled = v;
         self
     }
 
-    /// Controlled checked state.
     pub fn with_checked(mut self, v: bool) -> Self {
         self.checked = v;
         self.semantic_events.aria_state.checked = v;
         self
     }
 
-    /// Controlled selected state.
     pub fn with_selected(mut self, v: bool) -> Self {
         self.selected = v;
         self.semantic_events.aria_state.selected = v;
         self
     }
 }
-
-// ── Trait impls — mirrors `Div`, `Button`, `Image` ─────────────────
 
 impl StyledExt for Icon {
     fn get_style(&mut self) -> &mut Style {
@@ -220,8 +202,6 @@ impl HasSemanticEvents for Icon {
     }
 }
 
-// ── Component ──────────────────────────────────────────────────────
-
 impl Component for Icon {
     fn render(&self) -> impl IntoElement {
         let hovering = use_state(|| false);
@@ -229,10 +209,13 @@ impl Component for Icon {
         let a11y_id = use_a11y();
         let focus = use_focus(a11y_id);
 
-        // `disabled` and `aria-disabled` are treated uniformly — either
-        // one disables the icon for pointer tracking, focusability, and
-        // the `disabled:*` / `aria-disabled:*` class families.
+        // Signal to the nearest `HasContext` that this is an SVG.
+        // Fires `has-[svg]:` classes on the ancestor.
+        use_has_signal(HasKind::Svg);
+
+        // Signal disabled state too.
         let effectively_disabled = self.disabled || self.semantic_events.aria_state.disabled;
+        use_has_signal_when(HasKind::Disabled, effectively_disabled);
 
         // ── 1. Base style ────────────────────────────────────────
         let base = match try_consume_context::<InheritedStyle>() {
@@ -253,7 +236,7 @@ impl Component for Icon {
         let focused_kb = focus_state == Focus::Keyboard;
         let focused = matches!(focus_state, Focus::Keyboard | Focus::Pointer);
 
-        let mut live = Vec::with_capacity(10);
+        let mut live = Vec::with_capacity(12);
         if effectively_disabled {
             live.push(StyleVariant::Disabled);
         } else {
@@ -278,6 +261,7 @@ impl Component for Icon {
             live.push(StyleVariant::Selected);
         }
         live.extend(self.semantic_events.aria_state.active_variants());
+        live.extend(self.semantic_events.has_state.active_variants());
 
         let style = variants.apply_all(&live, base);
 
@@ -288,19 +272,12 @@ impl Component for Icon {
         // ── 4. Build the primitive ───────────────────────────────
         let mut el = SvgViewer::new(self.source.clone());
 
-        // currentColor ← Style::text_color. Lucide / heroicons use
-        // `stroke="currentColor"`, so this is what makes an icon inside
-        // a Button inherit the button's text colour.
         let icon_color: Color = match &style.text_color {
             Fill::Color(c) => *c,
-            // Gradient text colour has no single solid representative —
-            // fall back to black. Callers with gradient icons should use
-            // `.fill(..)` / `.stroke(..)` directly.
             _ => Color::from_argb(255, 0, 0, 0),
         };
         el = el.color(icon_color);
 
-        // Explicit paint overrides.
         if let Some(f) = &self.fill {
             if let Some(c) = f.to_color() {
                 el = el.fill(c);
@@ -353,23 +330,12 @@ impl Component for Icon {
     }
 }
 
-/// Map a resolved [`Style`] onto a [`SvgViewer`] primitive.
-///
-/// Only the `SvgViewer` methods that exist on the current `freya` version
-/// are used: `ContainerSizeExt` (width / height), `ContainerPositionExt`
-/// (margin / position), `ContainerWithContentExt` (flow), `EffectExt`
-/// (effects + cursor), `ImageExt` (image). Padding / min / max are not
-/// reachable from `SvgViewer` and are skipped — icons are fixed-size,
-/// wrap in a `div` if you need box-model overrides.
 fn apply_style(el: SvgViewer, s: &Style) -> SvgViewer {
     let mut el = el
-        // size
         .width(s.width.clone())
         .height(s.height.clone())
-        // position
         .margin(s.margin)
         .position(s.position.clone())
-        // flow
         .direction(s.direction)
         .main_align(s.main_align.clone())
         .cross_align(s.cross_align.clone())
@@ -377,22 +343,18 @@ fn apply_style(el: SvgViewer, s: &Style) -> SvgViewer {
         .offset_x(s.offset_x.get())
         .offset_y(s.offset_y.get())
         .content(s.content.clone())
-        // effects
         .overflow(s.overflow)
         .opacity(s.opacity)
         .rotation(s.rotation)
         .scale(s.scale)
         .transform_origin(s.transform_origin.clone())
         .backdrop_blur(s.blur)
-        // image
         .aspect_ratio(s.object_fit.clone())
         .image_cover(s.object_position.clone())
         .sampling_mode(s.sampling_mode.clone())
         .snap_to_grid(s.snap_to_grid)
         .blur(s.image_blur);
 
-    // Cursor — `CursorIcon::default()` means "don't set", matching how
-    // `Div` treats it in `styled.rs`.
     if s.cursor != CursorIcon::default() {
         el = el.cursor(s.cursor);
     }

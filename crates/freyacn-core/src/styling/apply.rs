@@ -1,4 +1,29 @@
 //! Shared `Style` → primitive helpers.
+//!
+//! Two entry points, one for each primitive family:
+//!
+//! * [`apply_to_rect`] — everything a `Rect` understands: layout, paint,
+//!   **box shadows**, border, effects, cursor, plus the inheritable text
+//!   slice (font families, text shadows) that Freya's `Rect` forwards to
+//!   any text content inside it.
+//! * [`apply_text_style`] — the text-only slice for `Label` / `Paragraph`.
+//!   Colour, `font_*`, `text_*`, letter-spacing, text-decoration, and the
+//!   `font_family` / `font_feature` / **text_shadow** adders.
+//!
+//! # Shadows
+//!
+//! `Style` carries two shadow vectors and they route differently:
+//!
+//! * `Style::shadows: Vec<Shadow>` — **box shadows**. Rendered by
+//!   `apply_to_rect` via `EffectExt::shadow(..)`, one call per layer.
+//!   Text primitives (`Label` / `Paragraph`) don't render box shadows,
+//!   so a `.shadow_md()` on `text(..)` is silently dropped — wrap in a
+//!   `div()` if you need one.
+//! * `Style::text_shadows: Vec<TextShadow>` — **glyph shadows**. Routed
+//!   through [`HasFontLists::add_text_shadow`] in [`apply_font_lists`],
+//!   which both `Rect` and the text primitives implement. A `.text_shadow_lg()`
+//!   on a `Div` cascades to descendants through `InheritedStyle` and gets
+//!   painted on the descendants' text primitives, not on the `Div` itself.
 
 use crate::styling::Style;
 use freya::prelude::Paragraph as ParagraphPrimitive;
@@ -11,7 +36,12 @@ use std::borrow::Cow;
 // ─────────────────────────────────────────────────────────────────────
 
 /// Applies every `Style` field that `Rect` understands: layout, paint,
-/// effects, border, inheritable text props, cursor.
+/// effects, **box shadows**, border, inheritable text props, cursor.
+///
+/// Text shadows in `s.text_shadows` are also forwarded — `Rect`
+/// implements `HasFontLists`, so the glyph shadows ride along and paint
+/// behind any text content the `Rect` renders. On a pure container
+/// (no text), the text-shadow field is inert.
 pub fn apply_to_rect(el: Rect, s: &Style) -> Rect {
     let mut el = el
         // layout
@@ -49,7 +79,17 @@ pub fn apply_to_rect(el: Rect, s: &Style) -> Rect {
         el = el.border(border.clone());
     }
 
-    // inheritable text style — shared with `text.rs` / `paragraph.rs`
+    // box shadows — one call per layer, matching Freya's single-shadow
+    // `EffectExt::shadow(..)` builder. The size presets on `StyledExt`
+    // write multiple layers (`shadow_sm` is two), so iterating here is
+    // what produces the correct CSS-equivalent stack.
+    for shadow in &s.shadows {
+        el = el.shadow(shadow.clone());
+    }
+
+    // inheritable text style — shared with `text.rs` / `paragraph.rs`.
+    // Also forwards `s.text_shadows` to the `Rect`'s text layer (see
+    // the module-level `# Shadows` section).
     el = apply_text_style(el, s);
 
     if s.cursor != CursorIcon::default() {
@@ -63,10 +103,11 @@ pub fn apply_to_rect(el: Rect, s: &Style) -> Rect {
 
 /// Applies the inheritable text-style slice (color, `font_*`, `text_*`,
 /// letter-spacing, text-decoration) plus the `font_family` /
-/// `font_feature` / `text_shadow` adders.
+/// `font_feature` / **`text_shadow`** adders.
 ///
 /// Works on any primitive that implements both [`TextStyleExt`] and
-/// [`HasFontLists`] — currently `Label` and `Paragraph` (the primitive).
+/// [`HasFontLists`] — currently `Rect`, `Label`, and `Paragraph` (the
+/// primitive).
 pub fn apply_text_style<E>(el: E, s: &Style) -> E
 where
     E: TextStyleExt + HasFontLists + Sized,
@@ -131,6 +172,12 @@ impl HasFontLists for ParagraphPrimitive {
 }
 
 /// Applies the `font_family` / `font_feature` / `text_shadow` loops.
+///
+/// All three accumulate — every entry in the vector produces one call on
+/// the primitive. That's what makes `shadow_md()` (three box-shadow
+/// layers on the `StyledExt` side) and `text_shadow_lg()` (four text
+/// shadow layers) render as CSS-equivalent stacks rather than a single
+/// flattened shadow.
 pub fn apply_font_lists<E: HasFontLists>(mut el: E, s: &Style) -> E {
     for family in &s.font_families {
         el = el.add_font_family(family.clone());

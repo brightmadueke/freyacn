@@ -14,6 +14,7 @@ keywords = ["freya", "ui", "components", "shadcn", "tailwind"]
 categories = ["gui", "development-tools"]
 
 [workspace.dependencies]
+freya = { version = "0.5.0-rc.13" }
 freyacn-macros = { version = "0.2.2", path = "crates/freyacn-macros" }
 freyacn-core = { version = "0.2.2", path = "crates/freyacn-core" }
 freyacn-shadcn = { version = "0.2.2", path = "crates/freyacn-shadcn" }
